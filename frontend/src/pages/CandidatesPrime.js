@@ -427,7 +427,26 @@ const Candidates = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        {getStatusBadge(candidate.status)}
+                        <div className="relative">
+                          <select
+                            value={candidate.status}
+                            onChange={(e) => updateCandidateStatus(candidate._id, e.target.value)}
+                            disabled={updatingStatus}
+                            className={`
+                              capsule-status px-3 py-1.5 rounded-full text-xs font-medium border-2 cursor-pointer
+                              transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-primary
+                              ${updatingStatus ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${getStatusStyles(candidate.status)}
+                            `}
+                          >
+                            <option value="new">Screening</option>
+                            <option value="shortlisted">Shortlisted</option>
+                            <option value="interviewed">Interview</option>
+                            <option value="offered">Offer</option>
+                            <option value="hired">Hired</option>
+                            <option value="rejected">Rejected</option>
+                          </select>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-foreground">
