@@ -86,8 +86,8 @@ const LandingPageNew = () => {
           {/* Removed middle Get Started button as per user request */}
         </motion.div>
 
-        {/* Unicorn Studio WebGL Scene */}
-        <div className="absolute inset-0 z-0">
+        {/* Unicorn Studio WebGL Scene - Temporarily disabled to fix cache error */}
+        {/* <div className="absolute inset-0 z-0">
           <UnicornScene 
             projectId="e1enjLKX9nbRQp4KW3Wq" 
             sdkUrl="https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v2.0.5/dist/unicornStudio.umd.js"
@@ -102,7 +102,7 @@ const LandingPageNew = () => {
               opacity: 0.6,
             }}
           />
-        </div>
+        </div> */}
 
         {/* Gradient overlay for better text readability */}
         <div className="absolute inset-0 bg-gradient-to-b from-[#0a0a12]/50 via-transparent to-[#0a0a12]" />
