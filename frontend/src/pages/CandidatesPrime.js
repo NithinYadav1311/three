@@ -21,7 +21,6 @@ const Candidates = () => {
   const [jobs, setJobs] = useState([]);
   const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [showStatusMenu, setShowStatusMenu] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   
   // Filters
