@@ -167,31 +167,35 @@ const DashboardPrime = () => {
             </CardContent>
           </Card>
 
-          {/* Upcoming Interviews */}
+          {/* Calendar Events */}
           <Card className="glass-card border-primary/10">
             <CardHeader>
-              <CardTitle>Upcoming Interviews</CardTitle>
-              <CardDescription>Next 3 scheduled</CardDescription>
+              <CardTitle>Calendar Events</CardTitle>
+              <CardDescription>Upcoming scheduled events</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {metrics?.upcoming_interviews?.length > 0 ? (
                   metrics.upcoming_interviews.map((event, i) => (
                     <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-elevated/50 border border-border/50">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
                         {new Date(event.start_datetime).getDate()}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{event.candidate_name || 'Candidate'}</p>
+                        <p className="font-medium truncate">{event.title || event.candidate_name || 'Event'}</p>
                         <p className="text-xs text-muted-foreground">
-                          {new Date(event.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • {event.event_type}
+                          {new Date(event.start_datetime).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(event.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </p>
+                        {event.event_type && (
+                          <p className="text-xs text-primary mt-1">{event.event_type}</p>
+                        )}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
-                    No upcoming interviews
+                    <Calendar className="w-12 h-12 mx-auto mb-2 opacity-20" />
+                    <p>No upcoming events</p>
                   </div>
                 )}
                 <Button variant="ghost" className="w-full text-xs" size="sm" onClick={() => navigate('/calendar')}>
