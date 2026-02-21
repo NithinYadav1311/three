@@ -259,30 +259,55 @@ const EmailsPrime = () => {
                       />
                     </div>
 
-                    {/* Interview Details - Only for interview stage */}
-                    {emailStage === 'interview' && (
+                    {/* Interview Details - Show for interview or shortlisted stage */}
+                    {(emailStage === 'interview' || emailStage === 'shortlisted') && (
                       <div className="space-y-4 p-4 rounded-2xl bg-elevated/50 border border-primary/20">
-                        <p className="text-sm font-semibold text-primary">Interview Details</p>
+                        <p className="text-sm font-semibold text-primary">
+                          {emailStage === 'interview' ? 'Interview Details' : 'Next Steps Details (Optional)'}
+                        </p>
                         
                         <div className="grid grid-cols-2 gap-3">
                           <div>
                             <label className="block text-xs font-medium text-foreground-secondary mb-2">
-                              Date *
+                              Date {emailStage === 'interview' ? '*' : ''}
                             </label>
                             <input
                               type="date"
                               value={interviewDate}
                               onChange={(e) => setInterviewDate(e.target.value)}
                               className="w-full px-3 py-2 rounded-xl bg-elevated border border-border focus:border-primary focus:outline-none text-sm"
+                              required={emailStage === 'interview'}
                             />
                           </div>
                           
                           <div>
                             <label className="block text-xs font-medium text-foreground-secondary mb-2">
-                              Time *
+                              Time {emailStage === 'interview' ? '*' : ''}
                             </label>
                             <input
                               type="time"
+                              value={interviewTime}
+                              onChange={(e) => setInterviewTime(e.target.value)}
+                              className="w-full px-3 py-2 rounded-xl bg-elevated border border-border focus:border-primary focus:outline-none text-sm"
+                              required={emailStage === 'interview'}
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-medium text-foreground-secondary mb-2">
+                            Location / Meeting Link
+                          </label>
+                          <input
+                            type="text"
+                            value={interviewLocation}
+                            onChange={(e) => setInterviewLocation(e.target.value)}
+                            placeholder="e.g., Zoom link or office address"
+                            className="w-full px-3 py-2 rounded-xl bg-elevated border border-border focus:border-primary focus:outline-none text-sm"
+                          />
+                        </div>
+                      </div>
+                    )}
                               value={interviewTime}
                               onChange={(e) => setInterviewTime(e.target.value)}
                               className="w-full px-3 py-2 rounded-xl bg-elevated border border-border focus:border-primary focus:outline-none text-sm"
