@@ -204,12 +204,13 @@ const EmailsPrime = () => {
                         {['screening', 'shortlisted', 'interview', 'offer', 'rejection'].map((stage) => (
                           <button
                             key={stage}
+                            type="button"
                             onClick={() => setEmailStage(stage)}
                             className={`
-                              px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border capitalize
+                              px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border-2 capitalize
                               ${emailStage === stage
-                                ? 'bg-elevated border-primary text-foreground'
-                                : 'border-border text-foreground-secondary hover:bg-elevated'
+                                ? 'bg-primary/10 border-primary text-primary font-semibold'
+                                : 'border-border text-foreground-secondary hover:bg-elevated hover:border-primary/30'
                               }
                             `}
                           >
@@ -228,12 +229,13 @@ const EmailsPrime = () => {
                         {['professional', 'friendly', 'urgent', 'casual'].map((tone) => (
                           <button
                             key={tone}
+                            type="button"
                             onClick={() => setEmailTone(tone)}
                             className={`
-                              px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border capitalize
+                              px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-200 border-2 capitalize
                               ${emailTone === tone
-                                ? 'bg-elevated border-primary text-foreground'
-                                : 'border-border text-foreground-secondary hover:bg-elevated'
+                                ? 'bg-primary/10 border-primary text-primary font-semibold'
+                                : 'border-border text-foreground-secondary hover:bg-elevated hover:border-primary/30'
                               }
                             `}
                           >
