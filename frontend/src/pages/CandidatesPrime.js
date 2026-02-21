@@ -112,12 +112,10 @@ const Candidates = () => {
     currentPage * itemsPerPage
   );
 
-  // Get score badge color
+  // Get score badge color - STRICTLY GOLD ONLY
   const getScoreBadgeColor = (score) => {
-    if (score >= 90) return 'from-emerald-400 to-emerald-600';
-    if (score >= 70) return 'from-blue-400 to-blue-600';
-    if (score >= 50) return 'from-amber-400 to-amber-600';
-    return 'from-red-400 to-red-600';
+    // All scores show in gold - no gradient, solid gold
+    return 'from-[#D4AF37] to-[#FFD700]'; // Rich gold gradient
   };
 
   // Get status badge
