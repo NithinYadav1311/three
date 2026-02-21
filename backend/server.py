@@ -1532,14 +1532,41 @@ async def create_calendar_event(event_data: CalendarEventCreate, request: Reques
     event_id = f"event_{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc)
     
-    # Parse datetime strings to datetime objects
+    # Parse datetime strings to datetime objects with multiple format support
     start_dt = event_data.start_datetime
     if isinstance(start_dt, str):
-        start_dt = datetime.fromisoformat(start_dt.replace('Z', '+00:00'))
+        try:
+            # Try ISO format first
+            start_dt = datetime.fromisoformat(start_dt.replace('Z', '+00:00'))
+        except:
+            try:
+                # Try alternative formats
+                start_dt = datetime.strptime(start_dt, "%Y-%m-%dT%H:%M:%S")
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except:
+                # Last resort - parse as is and add UTC
+                start_dt = datetime.fromisoformat(start_dt)
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
     
     end_dt = event_data.end_datetime
     if isinstance(end_dt, str):
-        end_dt = datetime.fromisoformat(end_dt.replace('Z', '+00:00'))
+        try:
+            end_dt = datetime.fromisoformat(end_dt.replace('Z', '+00:00'))
+        except:
+            try:
+                end_dt = datetime.strptime(end_dt, "%Y-%m-%dT%H:%M:%S")
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            except:
+                end_dt = datetime.fromisoformat(end_dt)
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+    
+    # Ensure datetimes are UTC
+    if not isinstance(start_dt, datetime):
+        start_dt = now
+    if not isinstance(end_dt, datetime):
+        end_dt = now + timedelta(hours=1)
     
     event_doc = {
         "event_id": event_id,
