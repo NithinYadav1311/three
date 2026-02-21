@@ -34,6 +34,15 @@ db = client[os.environ.get('DB_NAME', 'hrai_development')]
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+
 class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     user_id: str
