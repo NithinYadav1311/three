@@ -256,14 +256,14 @@ const JobsPrime = () => {
                 
                 <div className="mt-4 flex gap-2">
                   <button
-                    onClick={() => openModal(job)}
+                    onClick={() => openModal(job, true)}
                     className="flex-1 px-4 py-2 rounded-full bg-elevated hover:bg-surface border border-border text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     <Eye className="w-4 h-4" />
                     View
                   </button>
                   <button
-                    onClick={() => openModal(job)}
+                    onClick={() => openModal(job, false)}
                     className="flex-1 px-4 py-2 rounded-full bg-elevated hover:bg-surface border border-border text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
                     <Edit className="w-4 h-4" />
