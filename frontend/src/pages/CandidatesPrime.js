@@ -432,7 +432,7 @@ const Candidates = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-foreground">
-                          {jobs.find(j => j._id === candidate.job_id)?.title || 'N/A'}
+                          {candidate.job_title || 'N/A'}
                         </div>
                       </td>
                       <td className="px-6 py-4">
