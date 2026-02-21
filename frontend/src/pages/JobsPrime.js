@@ -72,12 +72,6 @@ const JobsPrime = () => {
       status: 'active'
     });
   };
-      title: '',
-      description: '',
-      requirements: '',
-      status: 'active'
-    });
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
