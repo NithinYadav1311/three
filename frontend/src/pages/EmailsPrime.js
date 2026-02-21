@@ -58,9 +58,20 @@ const EmailsPrime = () => {
     setGeneratedEmail(null);
 
     try {
+      // Map frontend stage to backend email_type
+      const stageToEmailType = {
+        'screening': 'follow_up',
+        'shortlisted': 'interview_invitation',
+        'interview': 'interview_invitation',
+        'offer': 'offer_letter',
+        'rejection': 'rejection'
+      };
+      
       const payload = {
-        candidate_id: selectedCandidate,
-        stage: emailStage,
+        email_type: stageToEmailType[emailStage] || 'follow_up',
+        candidate_name: candidate.candidate_name,
+        job_title: candidate.job_title || 'Position',
+        company_name: 'Our Company',
         tone: emailTone
       };
       
@@ -70,9 +81,11 @@ const EmailsPrime = () => {
       }
       
       // Add interview details if stage is interview
-      if (emailStage === 'interview') {
-        payload.interview_datetime = `${interviewDate}T${interviewTime}`;
-        payload.interview_mode = interviewMode;
+      if (emailStage === 'interview' || emailStage === 'shortlisted') {
+        if (interviewDate && interviewTime) {
+          payload.interview_date = interviewDate;
+          payload.interview_time = interviewTime;
+        }
         if (interviewLocation) {
           payload.interview_location = interviewLocation;
         }
