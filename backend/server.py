@@ -1006,7 +1006,7 @@ async def update_screening_status(screening_id: str, status_update: StatusUpdate
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     # Validate status
-    valid_statuses = ["new", "shortlisted", "interviewed", "hired", "rejected"]
+    valid_statuses = ["new", "shortlisted", "interviewed", "offered", "hired", "rejected"]
     if status_update.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
     
@@ -1052,7 +1052,7 @@ async def bulk_update_status(request: Request):
     if not screening_ids or not new_status:
         raise HTTPException(status_code=400, detail="screening_ids and status are required")
     
-    valid_statuses = ["new", "shortlisted", "interviewed", "hired", "rejected"]
+    valid_statuses = ["new", "shortlisted", "interviewed", "offered", "hired", "rejected"]
     if new_status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
     
