@@ -96,16 +96,21 @@ const JobFormDialog = ({ open, onOpenChange, job, onSaved }) => {
     setSaving(true);
     
     try {
+      const minSalary = formData.salary_range.min ? parseInt(formData.salary_range.min) : null;
+      const maxSalary = formData.salary_range.max ? parseInt(formData.salary_range.max) : null;
+
       const payload = {
         ...formData,
-        salary_range: (formData.salary_range.min || formData.salary_range.max) 
+        salary_range: (minSalary !== null || maxSalary !== null) 
           ? {
-              min: formData.salary_range.min ? parseInt(formData.salary_range.min) : null,
-              max: formData.salary_range.max ? parseInt(formData.salary_range.max) : null,
+              min: isNaN(minSalary) ? null : minSalary,
+              max: isNaN(maxSalary) ? null : maxSalary,
               currency: formData.salary_range.currency
             }
           : null
       };
+
+      console.log("Submitting job payload:", payload);
 
       if (job) {
         await apiClient.put(`/jobs/${job.job_id}`, payload);
@@ -117,8 +122,8 @@ const JobFormDialog = ({ open, onOpenChange, job, onSaved }) => {
       
       onSaved();
     } catch (error) {
-      console.error('Save error:', error);
-      toast.error(job ? 'Failed to update job' : 'Failed to create job');
+      console.error('Save error detailed:', error.response?.data || error);
+      toast.error(error.response?.data?.detail || (job ? 'Failed to update job' : 'Failed to create job'));
     } finally {
       setSaving(false);
     }
