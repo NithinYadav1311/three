@@ -328,6 +328,7 @@ const JobsPrime = () => {
                       required
                       readOnly={viewMode}
                       disabled={viewMode}
+                    />
                   </div>
 
                   <div>
