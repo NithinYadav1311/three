@@ -1255,7 +1255,8 @@ async def get_dashboard_analytics(request: Request):
     # 5. Upcoming Interviews (Next 3)
     now = datetime.now(timezone.utc)
     upcoming_interviews = await db.calendar_events.find(
-        {"user_id": user.user_id, "start_datetime": {"$gte": now}}
+        {"user_id": user.user_id, "start_datetime": {"$gte": now}},
+        {"_id": 0}  # Exclude MongoDB _id field
     ).sort("start_datetime", 1).limit(3).to_list(length=3)
     
     # 6. Recent Activity Feed (Last 5 actions)
