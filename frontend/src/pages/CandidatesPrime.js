@@ -139,6 +139,26 @@ const Candidates = () => {
     );
   };
 
+  // Update candidate status
+  const updateCandidateStatus = async (candidateId, newStatus) => {
+    try {
+      setUpdatingStatus(true);
+      await apiClient.post('/screenings/bulk-update', {
+        ids: [candidateId],
+        status: newStatus
+      });
+      
+      toast.success(`Candidate moved to ${newStatus}`);
+      setShowStatusMenu(null);
+      loadData(); // Reload to reflect changes
+    } catch (error) {
+      console.error('Status update failed:', error);
+      toast.error('Failed to update status');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
   // Bulk actions
   const handleBulkAction = async (action) => {
     if (selectedIds.length === 0) {
