@@ -120,6 +120,20 @@ const Candidates = () => {
   };
 
   // Get status badge
+  // Get status styles for inline dropdown
+  const getStatusStyles = (status) => {
+    const styles = {
+      'new': 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+      'screening': 'bg-blue-500/10 text-blue-500 border-blue-500/30',
+      'shortlisted': 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30',
+      'interviewed': 'bg-purple-500/10 text-purple-500 border-purple-500/30',
+      'offered': 'bg-amber-500/10 text-amber-500 border-amber-500/30',
+      'hired': 'bg-green-500/10 text-green-500 border-green-500/30',
+      'rejected': 'bg-red-500/10 text-red-500 border-red-500/30'
+    };
+    return styles[status] || styles.new;
+  };
+
   const getStatusBadge = (status) => {
     const styles = {
       'pending': 'bg-amber-500/10 text-amber-500 border-amber-500/20',
@@ -143,26 +157,13 @@ const Candidates = () => {
     try {
       setUpdatingStatus(true);
       
-      // Map frontend status to backend status
-      const statusMap = {
-        'screening': 'new',
-        'shortlisted': 'shortlisted',
-        'interview': 'interviewed',
-        'offer': 'offered',
-        'hired': 'hired',
-        'rejected': 'rejected'
-      };
-      
-      const backendStatus = statusMap[newStatus] || newStatus;
-      
       await apiClient.post('/screenings/bulk-update-status', {
         screening_ids: [candidateId],
-        status: backendStatus
+        status: newStatus
       });
       
-      toast.success(`Candidate moved to ${newStatus}`);
-      setShowStatusMenu(null);
-      loadData(); // Reload to reflect changes
+      toast.success(`Status updated to ${newStatus}`);
+      loadData(); // Reload ALL data to reflect changes everywhere
     } catch (error) {
       console.error('Status update failed:', error);
       toast.error(error.response?.data?.detail || 'Failed to update status');
