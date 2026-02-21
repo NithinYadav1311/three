@@ -460,12 +460,18 @@ const Candidates = () => {
                           <select
                             key={`status-${candidate._id}-${candidate.status}`}
                             value={candidate.status}
-                            onChange={(e) => updateCandidateStatus(candidate._id, e.target.value)}
-                            disabled={updatingStatus}
+                            onChange={(e) => {
+                              e.preventDefault();
+                              const newStatus = e.target.value;
+                              if (newStatus !== candidate.status) {
+                                updateCandidateStatus(candidate._id, newStatus);
+                              }
+                            }}
+                            disabled={updatingCandidates.has(candidate._id)}
                             className={`
                               capsule-status px-3 py-1.5 rounded-full text-xs font-medium border-2 cursor-pointer
                               transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-primary
-                              ${updatingStatus ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${updatingCandidates.has(candidate._id) ? 'opacity-50 cursor-not-allowed' : ''}
                               ${getStatusStyles(candidate.status)}
                             `}
                           >
