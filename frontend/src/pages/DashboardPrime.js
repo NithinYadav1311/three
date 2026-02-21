@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Users, Briefcase, TrendingUp, Clock, Calendar, Activity, 
   CheckCircle, XCircle, PieChart as PieChartIcon, BarChart3,
-  Filter, MoreHorizontal, ArrowUpRight, ArrowRight
+  Filter, MoreHorizontal, ArrowUpRight, ArrowRight, RefreshCw
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
