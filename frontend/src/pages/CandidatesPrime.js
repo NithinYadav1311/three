@@ -143,9 +143,22 @@ const Candidates = () => {
   const updateCandidateStatus = async (candidateId, newStatus) => {
     try {
       setUpdatingStatus(true);
-      await apiClient.post('/screenings/bulk-update', {
-        ids: [candidateId],
-        status: newStatus
+      
+      // Map frontend status to backend status
+      const statusMap = {
+        'screening': 'new',
+        'shortlisted': 'shortlisted',
+        'interview': 'interviewed',
+        'offer': 'offered',
+        'hired': 'hired',
+        'rejected': 'rejected'
+      };
+      
+      const backendStatus = statusMap[newStatus] || newStatus;
+      
+      await apiClient.post('/screenings/bulk-update-status', {
+        screening_ids: [candidateId],
+        status: backendStatus
       });
       
       toast.success(`Candidate moved to ${newStatus}`);
@@ -153,7 +166,7 @@ const Candidates = () => {
       loadData(); // Reload to reflect changes
     } catch (error) {
       console.error('Status update failed:', error);
-      toast.error('Failed to update status');
+      toast.error(error.response?.data?.detail || 'Failed to update status');
     } finally {
       setUpdatingStatus(false);
     }
