@@ -360,11 +360,7 @@ const ScreeningPrime = () => {
           </div>
         </div>
       </div>
-    </PrimeLayout>
-  );
-};
-
-export default ScreeningPrime;
+      
       <JobFormDialog 
         open={showJobModal} 
         onOpenChange={setShowJobModal} 
@@ -373,3 +369,8 @@ export default ScreeningPrime;
           loadJobs();
         }} 
       />
+    </PrimeLayout>
+  );
+};
+
+export default ScreeningPrime;
