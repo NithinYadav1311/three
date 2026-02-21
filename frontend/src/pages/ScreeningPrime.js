@@ -19,6 +19,7 @@ const ScreeningPrime = () => {
   const [showJobModal, setShowJobModal] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState(null);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [screening, setScreening] = useState(false);
