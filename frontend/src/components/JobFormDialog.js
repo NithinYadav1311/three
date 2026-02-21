@@ -413,7 +413,7 @@ const JobFormDialog = ({ open, onOpenChange, job, onSaved }) => {
             </Button>
             <Button 
               type="submit" 
-              className="ai-gradient text-white hover:opacity-90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={saving}
             >
               {saving ? 'Saving...' : (job ? 'Update Job' : 'Create Job')}

@@ -229,27 +229,18 @@ button:hover, .button:hover {
   box-shadow: 0 0 16px hsla(var(--primary) / 0.4);
 }
 
-/* Dark mode - GOLD GRADIENT */
+/* Dark mode - GOLD OUTLINE STYLE */
 .dark .capsule-button-primary {
-  background: linear-gradient(to right, #77530a, #ffd277, #77530a, #77530a, #ffd277, #77530a);
+  background: hsl(var(--elevated));
+  border: 1px solid hsl(var(--gold));
+  color: hsl(var(--gold));
   background-size: 250%;
   background-position: left;
-  color: #ffd277;
-  border: none;
-}
-
-.dark .capsule-button-primary::before {
-  position: absolute;
-  content: "";
-  inset: 0;
-  margin: 2px;
-  border-radius: 9999px;
-  background-color: rgba(0, 0, 0, 0.842);
-  z-index: 0;
 }
 
 .dark .capsule-button-primary:hover {
-  background-position: right;
+  background: hsl(var(--surface));
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
 }
 
 .capsule-button-primary > * {
