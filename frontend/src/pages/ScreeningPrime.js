@@ -516,14 +516,18 @@ const ScreeningPrime = () => {
                     <CardTitle className="text-lg text-green-500">Strengths</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-2">
-                      {(selectedCandidate.strengths || []).map((strength, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm">
-                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                          <span>{strength}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    {(selectedCandidate.strengths && selectedCandidate.strengths.length > 0) ? (
+                      <ul className="space-y-2">
+                        {selectedCandidate.strengths.map((strength, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm">
+                            <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                            <span>{strength}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No strengths identified</p>
+                    )}
                   </CardContent>
                 </Card>
 
@@ -532,14 +536,18 @@ const ScreeningPrime = () => {
                     <CardTitle className="text-lg text-red-500">Gaps</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ul className="space-y-2">
-                      {(selectedCandidate.gaps || []).map((gap, idx) => (
-                        <li key={idx} className="flex items-start gap-2 text-sm">
-                          <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                          <span>{gap}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    {(selectedCandidate.gaps && selectedCandidate.gaps.length > 0) ? (
+                      <ul className="space-y-2">
+                        {selectedCandidate.gaps.map((gap, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm">
+                            <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                            <span>{gap}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No gaps identified</p>
+                    )}
                   </CardContent>
                 </Card>
               </div>
