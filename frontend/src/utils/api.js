@@ -2,27 +2,30 @@
 import axios from 'axios';
 import { getSessionId } from './session';
 
-// Base URL is just the Render domain — /api prefix is added in the interceptor below.
-// reason: axios drops any path in baseURL (like /api) when request URLs start with "/"
-// Setting REACT_APP_BACKEND_URL should be just the domain: https://your-app.onrender.com
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com';
+// Backend domain only — full URLs are constructed in the interceptor below
+// This avoids axios baseURL path-stripping behavior with leading-slash URLs
+const BACKEND = (process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com')
+  .replace(/\/api\/?$/, '')  // strip trailing /api if someone set it with /api
+  .replace(/\/$/, '');       // strip trailing slash
 
 const apiClient = axios.create({
-  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json'
   }
+  // NO baseURL here — we build the full URL in the interceptor
 });
 
-// Intercept every request to:
-// 1. Add /api prefix (page components call /jobs, /screenings etc — we add /api here)
-// 2. Add session ID header
 apiClient.interceptors.request.use((config) => {
-  // Add /api prefix if not already present
-  // All page calls use /endpoint format, so /api + /endpoint = /api/endpoint ✓
-  if (config.url && !config.url.startsWith('/api')) {
-    config.url = '/api' + config.url;
+  const path = config.url || '';
+
+  // If it's already an absolute URL, don't touch it
+  if (!path.startsWith('http')) {
+    // Ensure the path has /api prefix
+    const withApi = path.startsWith('/api') ? path : '/api/' + path.replace(/^\//, '');
+    // Build the complete absolute URL
+    config.url = BACKEND + withApi;
   }
+
   config.headers['X-Session-ID'] = getSessionId();
   return config;
 });
