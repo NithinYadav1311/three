@@ -402,7 +402,7 @@ the same JD, and the same resume gets different scores against different JDs.
 ## STEP 3 — SCORING RULES
 
 ### Hard Caps (Non-negotiable):
-- Any resume scored against an empty or vague JD → cannot exceed 40.
+- Any resume scored against an empty or vague JD → cannot exceed 30.
 - Any resume missing even one Must-Have JD requirement → cannot exceed 74, 
   regardless of how strong the rest of the resume is.
 - A skill listed without supporting evidence anywhere → 50% credit only, always.
