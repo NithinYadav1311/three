@@ -188,25 +188,22 @@ const DashboardPrime = () => {
               <div className="space-y-3">
                 {metrics?.recent_activity?.filter(activity => activity.type === 'screening').slice(0, 5).length > 0 ? (
                   metrics.recent_activity.filter(activity => activity.type === 'screening').slice(0, 5).map((activity, i) => (
-                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-elevated/50 border border-border/50 hover:border-primary/30 transition-colors">
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-elevated/50 border border-border/50 hover:border-primary/30 transition-colors cursor-pointer"
+                         onClick={() => navigate('/screening')}>
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                          activity.score >= 80 ? 'bg-green-500' : 
-                          activity.score >= 60 ? 'bg-yellow-500' : 
-                          'bg-red-500'
-                        }`}>
-                          {activity.score || 0}
+                        <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{activity.candidate_name || 'Candidate'}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {activity.job_title || 'Position'} • {new Date(activity.created_at).toLocaleDateString()}
+                          <p className="font-medium truncate text-sm">{activity.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(activity.timestamp).toLocaleDateString()} • {new Date(activity.timestamp).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}
                           </p>
                         </div>
                       </div>
-                      <div className="text-xs font-medium text-primary">
-                        {activity.recommended_action || 'Review'}
-                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                   ))
                 ) : (
@@ -215,6 +212,7 @@ const DashboardPrime = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                     <p>No recent screenings</p>
+                    <p className="text-xs mt-1">Upload resumes to start screening</p>
                   </div>
                 )}
                 <Button variant="ghost" className="w-full text-xs" size="sm" onClick={() => navigate('/screening')}>
