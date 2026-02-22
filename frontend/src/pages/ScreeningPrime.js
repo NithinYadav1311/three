@@ -323,8 +323,6 @@ const ScreeningPrime = () => {
                                 size="icon"
                                 onClick={() => {
                                   setSelectedCandidate(result);
-                                  // Could navigate to candidate details or show modal
-                                  toast.info('View candidate details');
                                 }}
                               >
                                 <ChevronRight className="h-5 w-5" />
