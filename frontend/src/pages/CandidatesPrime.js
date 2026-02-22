@@ -424,7 +424,7 @@ const Candidates = () => {
                 <tbody className="divide-y divide-border">
                   {paginatedCandidates.map((candidate, index) => (
                     <motion.tr
-                      key={candidate._id}
+                      key={candidate.screening_id || candidate._id}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
@@ -433,12 +433,12 @@ const Candidates = () => {
                       <td className="px-6 py-4">
                         <input
                           type="checkbox"
-                          checked={selectedIds.includes(candidate._id)}
+                          checked={selectedIds.includes(candidate.screening_id)}
                           onChange={(e) => {
                             if (e.target.checked) {
-                              setSelectedIds([...selectedIds, candidate._id]);
+                              setSelectedIds([...selectedIds, candidate.screening_id]);
                             } else {
-                              setSelectedIds(selectedIds.filter(id => id !== candidate._id));
+                              setSelectedIds(selectedIds.filter(id => id !== candidate.screening_id));
                             }
                           }}
                           className="rounded border-border"
