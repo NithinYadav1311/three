@@ -1928,11 +1928,7 @@ Generate the email now."""
 
 # Calendar Events Management
 @api_router.post("/calendar/events")
-            
-            # Try to extract subject and body manually if JSON parsing fails
-            try:
-                # More robust regex patterns for extracting JSON fields
-                subject_match = re.search(r'"subject"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,', response_text, re.DOTALL)
+async def create_calendar_event(event_data: CalendarEventCreate, request: Request):
                 body_match = re.search(r'"body"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
                 
                 if subject_match and body_match:
