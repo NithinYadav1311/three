@@ -284,7 +284,8 @@ const JobsPrime = () => {
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.95, y: 20 }}
                 onClick={(e) => e.stopPropagation()}
-                className="glass-card-static rounded-3xl p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto scrollbar-custom"
+                className="glass-card-static rounded-3xl p-8 max-w-2xl w-full max-h-[85vh] overflow-y-auto scrollbar-custom relative"
+                style={{ zIndex: 60 }}
               >
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold text-foreground">
