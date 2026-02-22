@@ -460,9 +460,17 @@ BE CRITICAL. BE STRICT. Score based on evidence only. Return ONLY valid JSON - n
         response = groq_client.chat.completions.create(
             model='llama-3.3-70b-versatile',
             messages=[
-                {"role": "user", "content": prompt}
+                {
+                    "role": "system", 
+                    "content": "You are an ATS analyst. You MUST ALWAYS respond with valid JSON only. Never return plain text, markdown, or explanations outside JSON. Even for errors or warnings, include them in the detailed_analysis field of the JSON."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
             ],
-            temperature=0.2  # Lower temperature for more consistent strict scoring
+            temperature=0.1,  # Very low temperature for consistent JSON output
+            response_format={"type": "json_object"}  # Force JSON mode
         )
         response_text = response.choices[0].message.content.strip()
         
