@@ -102,7 +102,15 @@ const DashboardPrime = () => {
             </Button>
             <Button 
               onClick={() => navigate('/reports')}
-              className="bg-primary text-background font-bold hover:bg-primary/90 border-2 border-primary"
+              className="
+                font-bold border-2 transition-all duration-300
+                dark:bg-transparent dark:text-[#D4AF37] dark:border-[#D4AF37]
+                dark:hover:bg-[#D4AF37] dark:hover:text-black
+                light:bg-transparent light:text-green-600 light:border-green-600
+                light:hover:bg-green-600 light:hover:text-white
+                bg-transparent text-green-600 border-green-600
+                hover:bg-green-600 hover:text-white
+              "
             >
               <TrendingUp className="mr-2 h-4 w-4" /> View Reports
             </Button>
