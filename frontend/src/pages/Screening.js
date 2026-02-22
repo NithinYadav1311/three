@@ -102,16 +102,16 @@ const Screening = () => {
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setIsDragging(false);
-    
+
     const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter(file => 
+    const validFiles = files.filter(file =>
       file.name.toLowerCase().endsWith('.pdf') || file.name.toLowerCase().endsWith('.docx')
     );
-    
+
     if (validFiles.length !== files.length) {
       toast.error('Some files were skipped. Only PDF and DOCX files are supported.');
     }
-    
+
     setUploadedFiles(prev => [...prev, ...validFiles]);
   }, []);
 
@@ -137,7 +137,7 @@ const Screening = () => {
 
     setIsUploading(true);
     const formData = new FormData();
-    
+
     uploadedFiles.forEach(file => {
       formData.append('files', file);
     });
@@ -146,8 +146,7 @@ const Screening = () => {
       const response = await apiClient.post('/resumes/upload', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-        },
-        withCredentials: true
+        }
       });
 
       setUploadedResumes(response.data.resumes);
@@ -176,16 +175,16 @@ const Screening = () => {
 
     try {
       const response = await apiClient.post('/resumes/screen', {
-          job_id: selectedJob,
-          resume_ids: uploadedResumes.map(r => r.resume_id)
-        });
+        job_id: selectedJob,
+        resume_ids: uploadedResumes.map(r => r.resume_id)
+      });
 
       setScreeningResults(response.data.results);
       toast.success(response.data.message);
-      
+
       // Clear screening session after successful screening
       clearScreeningSession();
-      
+
       // Navigate to history to see results
       setTimeout(() => {
         navigate('/history');
@@ -224,44 +223,44 @@ const Screening = () => {
                   AIRecruiter
                 </span>
               </div>
-              
+
               <div className="hidden md:flex items-center gap-1">
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => navigate('/dashboard')}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   Dashboard
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => navigate('/jobs')}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   Jobs
                 </Button>
-                <Button 
+                <Button
                   variant="ghost"
                   className="text-foreground font-medium"
                 >
                   Screen Resumes
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => navigate('/history')}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   History
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => navigate('/calendar')}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   Calendar
                 </Button>
-                <Button 
-                  variant="ghost" 
+                <Button
+                  variant="ghost"
                   onClick={() => navigate('/emails')}
                   className="text-muted-foreground hover:text-foreground"
                 >
@@ -269,11 +268,11 @@ const Screening = () => {
                 </Button>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-3">
               <ThemeToggle />
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 onClick={() => navigate('/')}
                 className="text-muted-foreground hover:text-foreground"
               >
@@ -308,11 +307,10 @@ const Screening = () => {
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                      isDragging 
-                        ? 'border-primary bg-primary/5' 
+                    className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
+                        ? 'border-primary bg-primary/5'
                         : 'border-muted-foreground/25 hover:border-primary/50'
-                    }`}
+                      }`}
                   >
                     <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
                     <p className="text-lg font-medium mb-2">Drag & drop resume files here</p>
