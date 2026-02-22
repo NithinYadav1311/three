@@ -469,8 +469,29 @@ BE CRITICAL. BE STRICT. Score based on evidence only. Return ONLY valid JSON."""
             response_text = re.sub(r'^```(?:json)?\n', '', response_text)
             response_text = re.sub(r'\n```$', '', response_text)
         
+        # Log the response for debugging
+        logging.info(f"Groq response (first 500 chars): {response_text[:500]}")
+        
         import json
-        result = json.loads(response_text)
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError as je:
+            logging.error(f"JSON parsing failed. Error: {je}")
+            logging.error(f"Full response text: {response_text}")
+            raise HTTPException(
+                status_code=500, 
+                detail="AI returned invalid JSON. Please try again or check your job description."
+            )
+        
+        # Validate required fields
+        required_fields = ["match_score", "skills_score", "experience_score", "keyword_score", "summary", "strengths", "gaps", "recommended_action"]
+        missing_fields = [field for field in required_fields if field not in result]
+        if missing_fields:
+            logging.error(f"Missing required fields: {missing_fields}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"AI response incomplete. Missing: {', '.join(missing_fields)}"
+            )
         
         return result
         
