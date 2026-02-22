@@ -1926,7 +1926,12 @@ Generate the email now."""
             detail=f"Failed to generate email: {str(e)}"
         )
 
-# Calendar Events Management
+app.include_router(api_router)
+
+# Configure CORS after including router
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
