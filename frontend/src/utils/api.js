@@ -19,8 +19,9 @@ const apiClient = axios.create({
 // 2. Add session ID header
 apiClient.interceptors.request.use((config) => {
   // Add /api prefix if not already present
+  // All page calls use /endpoint format, so /api + /endpoint = /api/endpoint ✓
   if (config.url && !config.url.startsWith('/api')) {
-    config.url = '/api' + (config.url.startsWith('/') ? '' : '/') + config.url.replace(/^\//, '');
+    config.url = '/api' + config.url;
   }
   config.headers['X-Session-ID'] = getSessionId();
   return config;
