@@ -2,20 +2,11 @@
 import axios from 'axios';
 import { getSessionId } from './session';
 
-// IMPORTANT: Set REACT_APP_BACKEND_URL in your Cloudflare Pages environment variables.
-// Without it, API calls fall back to the Render backend URL below.
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com/api/';
+// Base URL is just the Render domain — /api prefix is added in the interceptor below.
+// reason: axios drops any path in baseURL (like /api) when request URLs start with "/"
+// Setting REACT_APP_BACKEND_URL should be just the domain: https://your-app.onrender.com
+const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com';
 
-if (!process.env.REACT_APP_BACKEND_URL) {
-  console.warn(
-    '[API] REACT_APP_BACKEND_URL is not set. ' +
-    'API calls will go to: ' + API_BASE
-  );
-}
-
-/**
- * Create an axios instance with session ID automatically included
- */
 const apiClient = axios.create({
   baseURL: API_BASE,
   headers: {
@@ -23,8 +14,14 @@ const apiClient = axios.create({
   }
 });
 
-// Add session ID to every request
+// Intercept every request to:
+// 1. Add /api prefix (page components call /jobs, /screenings etc — we add /api here)
+// 2. Add session ID header
 apiClient.interceptors.request.use((config) => {
+  // Add /api prefix if not already present
+  if (config.url && !config.url.startsWith('/api')) {
+    config.url = '/api' + (config.url.startsWith('/') ? '' : '/') + config.url.replace(/^\//, '');
+  }
   config.headers['X-Session-ID'] = getSessionId();
   return config;
 });
