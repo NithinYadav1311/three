@@ -458,20 +458,20 @@ const Candidates = () => {
                       <td className="px-6 py-4">
                         <div className="relative">
                           <select
-                            key={`status-${candidate._id}-${candidate.status}`}
+                            key={`status-${candidate.screening_id}-${candidate.status}`}
                             value={candidate.status}
                             onChange={(e) => {
                               e.preventDefault();
                               const newStatus = e.target.value;
                               if (newStatus !== candidate.status) {
-                                updateCandidateStatus(candidate._id, newStatus);
+                                updateCandidateStatus(candidate.screening_id, newStatus);
                               }
                             }}
-                            disabled={updatingCandidates.has(candidate._id)}
+                            disabled={updatingCandidates.has(candidate.screening_id)}
                             className={`
                               capsule-status px-3 py-1.5 rounded-full text-xs font-medium border-2 cursor-pointer
                               transition-all hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-primary
-                              ${updatingCandidates.has(candidate._id) ? 'opacity-50 cursor-not-allowed' : ''}
+                              ${updatingCandidates.has(candidate.screening_id) ? 'opacity-50 cursor-not-allowed' : ''}
                               ${getStatusStyles(candidate.status)}
                             `}
                           >
