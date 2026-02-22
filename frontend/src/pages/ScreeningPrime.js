@@ -239,7 +239,15 @@ const ScreeningPrime = () => {
                 </AnimatePresence>
 
                 <Button 
-                  className="w-full bg-primary text-background font-bold hover:bg-primary/90 border-2 border-primary"
+                  className="
+                    w-full font-bold border-2 transition-all duration-300
+                    dark:bg-transparent dark:text-[#D4AF37] dark:border-[#D4AF37]
+                    dark:hover:bg-[#D4AF37] dark:hover:text-black
+                    light:bg-transparent light:text-orange-600 light:border-orange-600
+                    light:hover:bg-orange-600 light:hover:text-white
+                    bg-transparent text-orange-600 border-orange-600
+                    hover:bg-orange-600 hover:text-white
+                  "
                   size="lg"
                   onClick={handleScreening}
                   disabled={uploading || screening || !selectedJob || files.length === 0}
