@@ -1,0 +1,2008 @@
+from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, UploadFile, File
+from fastapi.responses import RedirectResponse
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+import logging
+from pathlib import Path
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Optional, Union
+import uuid
+from datetime import datetime, timezone, timedelta
+import requests
+from urllib.parse import urlencode, unquote, quote
+import base64
+import io
+import re
+import PyPDF2
+import docx
+from groq import Groq
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+# Configure Groq AI Client for Llama 3.3 (70B)
+# Initialize as None if API key not provided (allows server to start)
+groq_api_key = os.environ.get('GROQ_API_KEY')
+groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
+
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017/')
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ.get('DB_NAME', 'hrai_development')]
+
+app = FastAPI()
+api_router = APIRouter(prefix="/api")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+
+class User(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    email: str
+    name: str
+    picture: Optional[str] = None
+    session_id: Optional[str] = None  # For session-based auth
+    created_at: datetime
+
+class UserSession(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    session_token: str
+    expires_at: datetime
+    created_at: datetime
+    google_tokens: Optional[dict] = None
+
+class SalaryRange(BaseModel):
+    min: Optional[int] = None
+    max: Optional[int] = None
+    currency: str = "USD"
+
+class JobDescription(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    job_id: str
+    user_id: str
+    title: str
+    department: Optional[str] = None
+    location: str = "Remote"
+    employment_type: str = "Full-time"
+    experience_level: str = "Mid"
+    description: str
+    requirements: List[str] = []
+    nice_to_have: List[str] = []
+    salary_range: Optional[SalaryRange] = None
+    status: str = "draft"  # draft, active, paused, closed
+    created_at: datetime
+    updated_at: datetime
+
+def _coerce_to_list(v) -> List[str]:
+    """Convert a plain string to a list; handle None and existing lists."""
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [item for item in v if item]  # filter empty strings
+    if isinstance(v, str):
+        if not v.strip():
+            return []
+        # Split by newlines if multi-line, otherwise treat as single item
+        lines = [line.strip() for line in v.splitlines() if line.strip()]
+        return lines if lines else [v.strip()]
+    return []
+
+class JobDescriptionCreate(BaseModel):
+    title: str
+    department: Optional[str] = None
+    location: str = "Remote"
+    employment_type: str = "Full-time"
+    experience_level: str = "Mid"
+    description: str
+    requirements: Union[List[str], str] = []
+    nice_to_have: Union[List[str], str] = []
+    salary_range: Optional[SalaryRange] = None
+    status: str = "draft"
+
+    @field_validator('requirements', 'nice_to_have', mode='before')
+    @classmethod
+    def coerce_to_list(cls, v):
+        return _coerce_to_list(v)
+
+class JobDescriptionUpdate(BaseModel):
+    title: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    employment_type: Optional[str] = None
+    experience_level: Optional[str] = None
+    description: Optional[str] = None
+    requirements: Optional[Union[List[str], str]] = None
+    nice_to_have: Optional[Union[List[str], str]] = None
+    salary_range: Optional[SalaryRange] = None
+    status: Optional[str] = None
+
+    @field_validator('requirements', 'nice_to_have', mode='before')
+    @classmethod
+    def coerce_to_list(cls, v):
+        return _coerce_to_list(v)
+
+class Resume(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    resume_id: str
+    user_id: str
+    filename: str
+    file_content: str  # base64 encoded
+    file_type: str  # pdf or docx
+    extracted_text: str
+    # Enhanced parsed data
+    source: str = "Direct Upload"
+    parsed_name: Optional[str] = None
+    parsed_email: Optional[str] = None
+    parsed_phone: Optional[str] = None
+    parsed_skills: List[str] = []
+    parsed_experience_years: int = 0
+    parsed_education: Optional[str] = None
+    parsed_current_role: Optional[str] = None
+    parsed_achievements: List[str] = []
+    created_at: datetime
+
+class StatusHistoryEntry(BaseModel):
+    status: str
+    changed_at: datetime
+    changed_by: Optional[str] = None
+
+class ScreeningResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    screening_id: str
+    user_id: str
+    resume_id: str
+    job_id: str
+    candidate_name: Optional[str] = None
+    match_score: int  # 0-100
+    experience_score: int  # 0-100
+    skills_score: int  # 0-100
+    keyword_score: int  # 0-100
+    summary: str
+    strengths: List[str]
+    gaps: List[str]
+    key_highlights: List[str]
+    recommended_action: str  # Interview, Maybe, Reject
+    detailed_analysis: str
+    status: str = "new"  # new, shortlisted, interviewed, hired, rejected
+    status_history: List[StatusHistoryEntry] = []
+    created_at: datetime
+    updated_at: datetime
+
+class ScreeningRequest(BaseModel):
+    job_id: str
+    resume_ids: List[str]
+
+class StatusUpdate(BaseModel):
+    status: str  # shortlisted, interviewed, hired, rejected
+
+# Helper function to extract text from PDF
+def extract_text_from_pdf(file_content: bytes) -> str:
+    try:
+        pdf_file = io.BytesIO(file_content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to extract PDF text: {str(e)}")
+
+# Helper function to extract text from DOCX
+def extract_text_from_docx(file_content: bytes) -> str:
+    try:
+        docx_file = io.BytesIO(file_content)
+        doc = docx.Document(docx_file)
+        text = "\n".join([paragraph.text for paragraph in doc.paragraphs])
+        return text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to extract DOCX text: {str(e)}")
+
+# Enhanced resume parsing with Groq AI
+async def parse_resume_with_ai(resume_text: str) -> dict:
+    """
+    Use Groq AI to extract structured information from resume text
+    Returns: dict with name, email, phone, skills, experience, education
+    """
+    
+    # Return mock data if AI is not available
+    if not is_ai_available():
+        logging.warning("Groq API key not configured - returning mock parsed data")
+        return {
+            "name": extract_candidate_name_simple(resume_text),
+            "email": None,
+            "phone": None,
+            "skills": ["Python", "JavaScript"],
+            "experience_years": 0,
+            "education": "Not parsed - AI disabled",
+            "current_role": "Not parsed - AI disabled",
+            "key_achievements": []
+        }
+    
+    try:
+        prompt = f"""You are an expert resume parser. Extract the following information from this resume and return it in JSON format.
+
+RESUME TEXT:
+{resume_text}
+
+Extract and return in this exact JSON format:
+{{
+    "name": "<Full name of the candidate>",
+    "email": "<Email address if found, otherwise null>",
+    "phone": "<Phone number if found, otherwise null>",
+    "skills": ["<skill1>", "<skill2>", "<skill3>"],
+    "experience_years": <estimated total years of experience as a number>,
+    "education": "<Highest degree or most relevant education>",
+    "current_role": "<Most recent job title>",
+    "key_achievements": ["<achievement1>", "<achievement2>"]
+}}
+
+Rules:
+1. Extract exact information from the resume
+2. If information is not found, use null for strings and empty array for lists
+3. For skills, extract both technical and soft skills
+4. Return ONLY valid JSON, no markdown or extra text"""
+
+        response = groq_client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        response_text = response.choices[0].message.content.strip()
+        
+        # Clean response
+        if response_text.startswith('```'):
+            response_text = re.sub(r'^```(?:json)?\n', '', response_text)
+            response_text = re.sub(r'\n```$', '', response_text)
+        
+        import json
+        parsed_data = json.loads(response_text)
+        return parsed_data
+        
+    except Exception as e:
+        logging.error(f"AI resume parsing error: {str(e)}")
+        # Return basic structure if parsing fails
+        return {
+            "name": extract_candidate_name_simple(resume_text),
+            "email": None,
+            "phone": None,
+            "skills": [],
+            "experience_years": 0,
+            "education": None,
+            "current_role": None,
+            "key_achievements": []
+        }
+
+# Helper function to extract candidate name from resume text (fallback)
+def extract_candidate_name_simple(resume_text: str) -> Optional[str]:
+    # Simple heuristic: first line or first few words often contain the name
+    lines = resume_text.strip().split('\n')
+    if lines:
+        first_line = lines[0].strip()
+        # Return first line if it's short (likely a name)
+        if len(first_line) < 50 and not any(char.isdigit() for char in first_line):
+            return first_line
+    return None
+
+# ATS-style screening with Groq AI - STRICT SCORING
+async def screen_resume_with_ai(resume_text: str, job_data: dict) -> dict:
+    
+    # Return mock data if AI is not available
+    if not is_ai_available():
+        logging.warning("Groq API key not configured - returning mock screening data")
+        return {
+            "match_score": 75,
+            "experience_score": 70,
+            "skills_score": 80,
+            "keyword_score": 75,
+            "summary": "AI screening disabled - Please configure GROQ_API_KEY to enable detailed analysis.",
+            "strengths": ["Resume uploaded successfully"],
+            "gaps": ["AI not configured - unable to perform detailed analysis"],
+            "key_highlights": ["Configure Groq API key for AI-powered screening"],
+            "recommended_action": "Maybe",
+            "detailed_analysis": "AI features are currently disabled. Add GROQ_API_KEY to enable intelligent resume screening."
+        }
+    
+    try:
+        # Build comprehensive prompt for detailed ATS-style analysis
+        prompt = f"""You are an expert ATS (Applicant Tracking System) analyst and senior technical recruiter 
+with 15+ years of experience evaluating candidates across industries. Your job is to 
+perform a deep, honest, and unbiased analysis of a resume against a job description.
+
+You do NOT inflate scores to make candidates feel good. You do NOT cap scores out of 
+caution. You score based purely on EVIDENCE found in the resume — not assumptions, 
+potential, or how the resume "feels."
+
+**CRITICAL: You MUST ALWAYS return valid JSON, even if the JD is incomplete.**
+
+---
+
+## ⚠️ STEP 0 — JOB DESCRIPTION VALIDATION
+
+Before scoring, validate the JD for completeness. Check how many of these are present:
+
+- At least 3 specific required skills or technologies
+- At least 1 clearly defined role responsibility
+- At least 1 experience requirement (years of experience or seniority level)
+- A clear role title or domain
+
+### If 0 or 1 are present:
+Score the resume at 25-35 range with detailed_analysis explaining: "⚠️ Invalid or Empty Job Description: The provided JD does not contain enough information to perform a meaningful ATS analysis."
+
+### If exactly 2 are present:
+Score between 30-50 with detailed_analysis including: "⚠️ Thin JD Warning: This JD is underdefined. Scoring has low confidence."
+
+### If 3 or 4 are present:
+Proceed with full evidence-based scoring.
+
+---
+
+## JOB DESCRIPTION
+
+Title: {job_data['title']}
+Description: {job_data['description']}
+Requirements: {job_data.get('requirements', 'Not specified')}
+
+---
+
+## RESUME
+
+{resume_text}
+
+---
+
+## STEP 1 — RESUME vs JD DIFFERENTIAL ANALYSIS
+
+Before assigning dimension scores, perform this comparison:
+
+1. Extract ALL must-have requirements from the JD (skills, tools, years, responsibilities).
+2. Extract ALL nice-to-have requirements from the JD.
+3. For EACH requirement, locate the exact evidence in the resume that satisfies it.
+4. Tag each requirement as one of:
+   - ✅ FULLY MET — demonstrated in context (project, work experience, or certification)
+   - ⚠️ PARTIALLY MET — mentioned but not demonstrated anywhere = 50% credit only
+   - ❌ MISSING — not found anywhere in the resume
+
+This mapping drives every dimension score. Do not score dimensions without completing 
+this step. This is what ensures two different resumes get two different scores against 
+the same JD, and the same resume gets different scores against different JDs.
+
+---
+
+## STEP 2 — SCORING DIMENSIONS
+
+### 1. Skills Alignment (Weight: 25%)
+- Separate JD skills into Must-Have vs Nice-to-Have.
+- Must-Have skills carry 2x the weight of Nice-to-Have skills.
+- A skill demonstrated in projects or work experience = full credit.
+- A skill only listed in a skills section with no supporting context = 50% credit only.
+- A must-have skill completely missing = 0 credit and triggers the 74-point hard cap.
+- Do not assume skill competence. Evidence or nothing.
+
+### 2. Experience Relevance (Weight: 20%)
+- Compare years of experience required vs what the candidate has (total + domain-specific).
+- Evaluate role title similarity: same title, adjacent, or unrelated.
+- Measure responsibility overlap: what % of JD responsibilities appear in work history.
+- Check seniority alignment — junior resume for a senior role = significant penalty.
+- Recency matters: relevant experience from 5+ years ago carries less weight than recent.
+
+### 3. Keyword Match (Weight: 20%)
+- Extract all hard keywords from the JD: tools, technologies, frameworks, methodologies, 
+  domain-specific terms.
+- Check each keyword: does it appear verbatim or as a clear synonym in the resume?
+- Placement quality matters: appearing in job title or experience > skills list > projects.
+- Keywords listed without any surrounding context = penalized.
+- Score = (keywords matched in context / total required keywords) × 100, 
+  adjusted for placement quality.
+
+### 4. Project Relevance (Weight: 20%)
+- Evaluate projects for domain relevance, tech stack match, scale, and complexity.
+- A project matching BOTH the JD domain AND the required tech stack = high value.
+- Quantified outcomes (metrics, scale, performance improvements) = bonus.
+- Generic tutorial projects, clones, or unrelated work = penalized.
+- Production-scale, open-source, or deployed/published work = bonus.
+- No projects listed when the JD expects hands-on work = significant penalty.
+
+### 5. Certifications & Education (Weight: 15%)
+- Check if the degree field and level match what the JD expects.
+- Certifications explicitly or implicitly required by the JD carry strong weight 
+  (e.g., AWS for cloud, PMP for project management, CPA for finance).
+- Multiple relevant and recent certifications (within 3 years) = bonus.
+- If JD has no strict education requirement, shift weight entirely toward certifications.
+- Outdated or irrelevant certifications = no credit. Do not pad the score with these.
+
+---
+
+## STEP 3 — SCORING RULES
+
+### Hard Caps (Non-negotiable):
+- Any resume scored against an empty or vague JD → cannot exceed 30.
+- Any resume missing even one Must-Have JD requirement → cannot exceed 74, 
+  regardless of how strong the rest of the resume is.
+- A skill listed without supporting evidence anywhere → 50% credit only, always.
+
+### Anti-Sandbagging Rules — Score must reflect evidence, not caution:
+- If ALL must-have skills are demonstrated with evidence → Skills dimension must score 85+.
+- If all required keywords appear in context, not just listed → Keyword score must be 85+.
+- If projects directly match the JD domain and tech stack → Project score must be 80+.
+- A resume meeting all must-haves + most nice-to-haves + relevant projects + relevant 
+  certifications → Overall score MUST be 85–95. Refusing to go above 75 here is a 
+  scoring error.
+- Never apply a hidden penalty for "seems too good." Score what the evidence shows.
+
+### Anti-Inflation Rules — Do not give what wasn't earned:
+- Do not award points for potential, effort, or how the resume reads.
+- Do not generalize or assume competence from vague statements.
+- Do not give a mid-range score just because you're uncertain — low confidence 
+  should lower the score, not normalize it.
+
+### Calibration Reference:
+| Score   | Meaning                                                              |
+|---------|----------------------------------------------------------------------|
+| 90–100  | Near-perfect fit. Almost every requirement met with clear evidence.  |
+| 80–89   | Strong fit. All must-haves met, minor gaps in nice-to-haves only.   |
+| 70–79   | Good fit. 1–2 must-haves are weak or missing.                       |
+| 50–69   | Moderate fit. Multiple gaps across dimensions.                       |
+| 30–49   | Weak fit. Significant misalignment in core areas.                   |
+| Below 30| Poor fit. Resume and JD are largely misaligned.                     |
+
+---
+
+## CRITICAL OUTPUT RULES
+
+1. **ALWAYS return valid JSON** - Never return plain text, warnings, or explanations
+2. **Even for invalid JDs** - Return JSON with low scores and explanation in detailed_analysis
+3. **No markdown** - No ```json``` blocks, just pure JSON
+4. **No extra text** - Start with {{ and end with }}
+
+Return ONLY this JSON format:
+{{
+    "match_score": <0-100 integer>,
+    "experience_score": <0-100 integer>,
+    "skills_score": <0-100 integer>,
+    "keyword_score": <0-100 integer>,
+    "summary": "<2-3 sentence honest overview>",
+    "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
+    "gaps": ["<gap 1>", "<gap 2>", "<gap 3>"],
+    "key_highlights": ["<highlight 1>", "<highlight 2>", "<highlight 3>"],
+    "recommended_action": "<Interview|Maybe|Reject>",
+    "detailed_analysis": "<Honest paragraph with evidence. Include JD warnings here if needed>"
+}}
+
+BE CRITICAL. BE STRICT. Score based on evidence only. Return ONLY valid JSON - nothing else."""
+
+        response = groq_client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are an ATS analyst. You MUST ALWAYS respond with valid JSON only. Never return plain text, markdown, or explanations outside JSON. Even for errors or warnings, include them in the detailed_analysis field of the JSON."
+                },
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            temperature=0.1,  # Very low temperature for consistent JSON output
+            response_format={"type": "json_object"}  # Force JSON mode
+        )
+        response_text = response.choices[0].message.content.strip()
+        
+        # Extract JSON from response (remove markdown code blocks if present)
+        if response_text.startswith('```'):
+            response_text = re.sub(r'^```(?:json)?\n', '', response_text)
+            response_text = re.sub(r'\n```$', '', response_text)
+        
+        # Log the response for debugging
+        logging.info(f"Groq response (first 500 chars): {response_text[:500]}")
+        
+        import json
+        try:
+            result = json.loads(response_text)
+        except json.JSONDecodeError as je:
+            logging.error(f"JSON parsing failed. Error: {je}")
+            logging.error(f"Full response text: {response_text}")
+            raise HTTPException(
+                status_code=500, 
+                detail="AI returned invalid JSON. Please try again or check your job description."
+            )
+        
+        # Validate required fields
+        required_fields = ["match_score", "skills_score", "experience_score", "keyword_score", "summary", "strengths", "gaps", "recommended_action"]
+        missing_fields = [field for field in required_fields if field not in result]
+        if missing_fields:
+            logging.error(f"Missing required fields: {missing_fields}")
+            raise HTTPException(
+                status_code=500, 
+                detail=f"AI response incomplete. Missing: {', '.join(missing_fields)}"
+            )
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"AI screening error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI screening failed: {str(e)}")
+
+async def get_user_from_cookie(request: Request) -> Optional[User]:
+    # First, try to get session from cookie (legacy)
+    session_token = request.cookies.get("session_token")
+    if not session_token:
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            session_token = auth_header.replace("Bearer ", "")
+    
+    # NEW: Check for X-Session-ID header (session-based, no auth required)
+    session_id = request.headers.get("X-Session-ID")
+    
+    if session_id:
+        # Session-based authentication (no login required)
+        # Check if user exists for this session
+        user_doc = await db.users.find_one(
+            {"session_id": session_id},
+            {"_id": 0}
+        )
+        
+        if user_doc:
+            return User(**user_doc)
+        
+        # Create a new user for this session
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
+        
+        new_user = {
+            "user_id": user_id,
+            "session_id": session_id,
+            "email": f"{user_id}@local.session",
+            "name": "Guest User",
+            "picture": None,
+            "created_at": now,
+        }
+        
+        await db.users.insert_one(new_user)
+        return User(**new_user)
+    
+    # Legacy token-based authentication
+    if not session_token:
+        return None
+    
+    session_doc = await db.user_sessions.find_one(
+        {"session_token": session_token},
+        {"_id": 0}
+    )
+    
+    if not session_doc:
+        return None
+    
+    expires_at = session_doc["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at < datetime.now(timezone.utc):
+        await db.user_sessions.delete_one({"session_token": session_token})
+        return None
+    
+    user_doc = await db.users.find_one(
+        {"user_id": session_doc["user_id"]},
+        {"_id": 0}
+    )
+    
+    if not user_doc:
+        return None
+    
+    return User(**user_doc)
+
+# Google OAuth 2.0 Configuration
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# Helper function to check if AI features are available
+def is_ai_available():
+    return groq_client is not None
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v2/userinfo"
+
+@api_router.get("/auth/google/login")
+async def google_login():
+    """Generate Google OAuth authorization URL and return it."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="Google OAuth is not configured. Set GOOGLE_CLIENT_ID.")
+    
+    redirect_uri = f"{FRONTEND_URL}/auth/callback"
+    state = uuid.uuid4().hex
+    
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "access_type": "offline",
+        "state": state,
+        "prompt": "consent",
+    }
+    
+    auth_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
+    return {"auth_url": auth_url}
+
+@api_router.post("/auth/google/callback")
+async def google_callback(request: Request, response: Response):
+    """Exchange Google authorization code for tokens and create user session."""
+    body = await request.json()
+    code = body.get("code")
+    
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+    
+    redirect_uri = f"{FRONTEND_URL}/auth/callback"
+    
+    try:
+        # Exchange authorization code for tokens
+        token_response = requests.post(
+            GOOGLE_TOKEN_URL,
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            timeout=10,
+        )
+        
+        if token_response.status_code != 200:
+            logging.error(f"Google token exchange failed: {token_response.text}")
+            raise HTTPException(status_code=401, detail="Failed to exchange authorization code")
+        
+        token_data = token_response.json()
+        access_token = token_data.get("access_token")
+        
+        if not access_token:
+            raise HTTPException(status_code=401, detail="No access token received from Google")
+        
+        # Fetch user profile from Google
+        userinfo_response = requests.get(
+            GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        )
+        
+        if userinfo_response.status_code != 200:
+            raise HTTPException(status_code=401, detail="Failed to fetch user info from Google")
+        
+        google_user = userinfo_response.json()
+        email = google_user.get("email")
+        name = google_user.get("name", email)
+        picture = google_user.get("picture")
+        
+        if not email:
+            raise HTTPException(status_code=401, detail="Google account has no email")
+        
+        # Create or update user in database
+        user_id = f"user_{uuid.uuid4().hex[:12]}"
+        
+        existing_user = await db.users.find_one(
+            {"email": email},
+            {"_id": 0}
+        )
+        
+        if existing_user:
+            user_id = existing_user["user_id"]
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "name": name,
+                    "picture": picture,
+                }}
+            )
+        else:
+            await db.users.insert_one({
+                "user_id": user_id,
+                "email": email,
+                "name": name,
+                "picture": picture,
+                "created_at": datetime.now(timezone.utc),
+            })
+        
+        # Create session
+        session_token = uuid.uuid4().hex
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        
+        await db.user_sessions.insert_one({
+            "user_id": user_id,
+            "session_token": session_token,
+            "expires_at": expires_at,
+            "created_at": datetime.now(timezone.utc),
+            "google_tokens": {
+                "access_token": access_token,
+                "refresh_token": token_data.get("refresh_token"),
+            },
+        })
+        
+        user_doc = await db.users.find_one(
+            {"user_id": user_id},
+            {"_id": 0}
+        )
+        
+        # Set the session cookie
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=True,
+            samesite="none",
+            max_age=7 * 24 * 60 * 60,  # 7 days
+            path="/",
+        )
+        
+        return {
+            "session_token": session_token,
+            "user": user_doc,
+        }
+    
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Google OAuth error: {str(e)}")
+
+@api_router.get("/auth/me")
+async def get_current_user(request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+@api_router.post("/auth/logout")
+async def logout(request: Request, response: Response):
+    session_token = request.cookies.get("session_token")
+    
+    if session_token:
+        await db.user_sessions.delete_one({"session_token": session_token})
+    
+    response.delete_cookie(
+        key="session_token",
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="none"
+    )
+    
+    return {"message": "Logged out successfully"}
+
+# Job Description Endpoints
+
+@api_router.post("/jobs")
+async def create_job(job_data: JobDescriptionCreate, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    
+    job_doc = {
+        "job_id": job_id,
+        "user_id": user.user_id,
+        "title": job_data.title,
+        "department": job_data.department,
+        "location": job_data.location,
+        "employment_type": job_data.employment_type,
+        "experience_level": job_data.experience_level,
+        "description": job_data.description,
+        "requirements": job_data.requirements,
+        "nice_to_have": job_data.nice_to_have,
+        "salary_range": job_data.salary_range.dict() if job_data.salary_range else None,
+        "status": job_data.status,
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    await db.jobs.insert_one(job_doc)
+    
+    created_job = await db.jobs.find_one(
+        {"job_id": job_id},
+        {"_id": 0}
+    )
+    
+    return created_job
+
+@api_router.get("/jobs")
+async def list_jobs(request: Request, status: Optional[str] = None):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    query = {"user_id": user.user_id}
+    if status:
+        query["status"] = status
+    
+    jobs = await db.jobs.find(query, {"_id": 0}).sort("created_at", -1).to_list(length=None)
+    
+    return jobs
+
+@api_router.get("/jobs/{job_id}")
+async def get_job(job_id: str, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    job = await db.jobs.find_one(
+        {"job_id": job_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return job
+
+@api_router.put("/jobs/{job_id}")
+async def update_job(job_id: str, job_data: JobDescriptionUpdate, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    job = await db.jobs.find_one(
+        {"job_id": job_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    update_data = {k: v for k, v in job_data.dict(exclude_unset=True).items() if v is not None}
+    
+    if update_data:
+        if "salary_range" in update_data and update_data["salary_range"]:
+            update_data["salary_range"] = update_data["salary_range"]
+        
+        update_data["updated_at"] = datetime.now(timezone.utc)
+        
+        await db.jobs.update_one(
+            {"job_id": job_id},
+            {"$set": update_data}
+        )
+    
+    updated_job = await db.jobs.find_one(
+        {"job_id": job_id},
+        {"_id": 0}
+    )
+    
+    return updated_job
+
+@api_router.delete("/jobs/{job_id}")
+async def delete_job(job_id: str, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    result = await db.jobs.delete_one(
+        {"job_id": job_id, "user_id": user.user_id}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return {"message": "Job deleted successfully"}
+
+# Resume Upload Endpoints
+
+@api_router.post("/resumes/upload")
+async def upload_resumes(request: Request, files: List[UploadFile] = File(...)):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    uploaded_resumes = []
+    
+    for file in files:
+        # Validate file type
+        if not file.filename.lower().endswith(('.pdf', '.docx')):
+            raise HTTPException(status_code=400, detail=f"Invalid file type: {file.filename}. Only PDF and DOCX are supported.")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Validate file size (max 10MB)
+        if len(file_content) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail=f"File too large: {file.filename}. Maximum size is 10MB.")
+        
+        # Extract text based on file type
+        file_type = 'pdf' if file.filename.lower().endswith('.pdf') else 'docx'
+        
+        if file_type == 'pdf':
+            extracted_text = extract_text_from_pdf(file_content)
+        else:
+            extracted_text = extract_text_from_docx(file_content)
+        
+        if not extracted_text or len(extracted_text) < 50:
+            raise HTTPException(status_code=400, detail=f"Could not extract sufficient text from {file.filename}")
+        
+        # Parse resume with AI to extract structured data
+        parsed_data = await parse_resume_with_ai(extracted_text)
+        
+        # Encode file content to base64
+        file_content_base64 = base64.b64encode(file_content).decode('utf-8')
+        
+        # Create resume record with parsed data
+        resume_id = f"resume_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
+        
+        resume_doc = {
+            "resume_id": resume_id,
+            "user_id": user.user_id,
+            "filename": file.filename,
+            "file_content": file_content_base64,
+            "file_type": file_type,
+            "extracted_text": extracted_text,
+            "source": "Direct Upload",
+            # Parsed data from AI
+            "parsed_name": parsed_data.get("name"),
+            "parsed_email": parsed_data.get("email"),
+            "parsed_phone": parsed_data.get("phone"),
+            "parsed_skills": parsed_data.get("skills", []),
+            "parsed_experience_years": parsed_data.get("experience_years", 0),
+            "parsed_education": parsed_data.get("education"),
+            "parsed_current_role": parsed_data.get("current_role"),
+            "parsed_achievements": parsed_data.get("key_achievements", []),
+            "created_at": now
+        }
+        
+        await db.resumes.insert_one(resume_doc)
+        
+        uploaded_resumes.append({
+            "resume_id": resume_id,
+            "filename": file.filename,
+            "file_type": file_type,
+            "text_length": len(extracted_text),
+            "candidate_name": parsed_data.get("name"),
+            "skills_count": len(parsed_data.get("skills", [])),
+            "experience_years": parsed_data.get("experience_years", 0)
+        })
+    
+    return {
+        "message": f"Successfully uploaded {len(uploaded_resumes)} resume(s)",
+        "resumes": uploaded_resumes
+    }
+
+@api_router.post("/resumes/screen")
+async def screen_resumes(request: Request, screening_request: ScreeningRequest):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Get job description
+    job = await db.jobs.find_one(
+        {"job_id": screening_request.job_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    screening_results = []
+    
+    for resume_id in screening_request.resume_ids:
+        # Get resume
+        resume = await db.resumes.find_one(
+            {"resume_id": resume_id, "user_id": user.user_id},
+            {"_id": 0}
+        )
+        
+        if not resume:
+            continue  # Skip if resume not found
+        
+        # Screen resume with AI
+        ai_result = await screen_resume_with_ai(resume['extracted_text'], job)
+        
+        # Use parsed name if available, otherwise extract from text
+        candidate_name = resume.get('parsed_name') or extract_candidate_name_simple(resume['extracted_text'])
+        
+        # Create screening result
+        screening_id = f"screening_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
+        
+        screening_doc = {
+            "screening_id": screening_id,
+            "user_id": user.user_id,
+            "resume_id": resume_id,
+            "job_id": screening_request.job_id,
+            "candidate_name": candidate_name,
+            "match_score": ai_result['match_score'],
+            "experience_score": ai_result['experience_score'],
+            "skills_score": ai_result['skills_score'],
+            "keyword_score": ai_result['keyword_score'],
+            "summary": ai_result['summary'],
+            "strengths": ai_result['strengths'],
+            "gaps": ai_result['gaps'],
+            "key_highlights": ai_result['key_highlights'],
+            "recommended_action": ai_result['recommended_action'],
+            "detailed_analysis": ai_result['detailed_analysis'],
+            "status": "new",
+            "status_history": [{
+                "status": "new",
+                "changed_at": now,
+                "changed_by": user.user_id
+            }],
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        await db.screenings.insert_one(screening_doc)
+        
+        screening_results.append({
+            "screening_id": screening_id,
+            "resume_id": resume_id,
+            "filename": resume['filename'],
+            "candidate_name": candidate_name,
+            "match_score": ai_result['match_score'],
+            "recommended_action": ai_result['recommended_action']
+        })
+    
+    return {
+        "message": f"Successfully screened {len(screening_results)} resume(s)",
+        "results": screening_results
+    }
+
+@api_router.get("/screenings")
+async def list_screenings(
+    request: Request, 
+    job_id: Optional[str] = None,
+    status: Optional[str] = None,
+    min_score: Optional[int] = None,
+    max_score: Optional[int] = None,
+    search: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    query = {"user_id": user.user_id}
+    
+    # Filter by job
+    if job_id:
+        query["job_id"] = job_id
+    
+    # Filter by status
+    if status:
+        query["status"] = status
+    
+    # Filter by score range
+    if min_score is not None or max_score is not None:
+        score_query = {}
+        if min_score is not None:
+            score_query["$gte"] = min_score
+        if max_score is not None:
+            score_query["$lte"] = max_score
+        if score_query:
+            query["match_score"] = score_query
+    
+    # Filter by date range
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        if end_date:
+            date_query["$lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        if date_query:
+            query["created_at"] = date_query
+    
+    # Search by candidate name
+    if search:
+        query["candidate_name"] = {"$regex": search, "$options": "i"}
+    
+    screenings = await db.screenings.find(query, {"_id": 0}).sort("created_at", -1).to_list(length=None)
+    
+    # Enrich with job and resume info
+    for screening in screenings:
+        # Get job info
+        job = await db.jobs.find_one(
+            {"job_id": screening['job_id']},
+            {"_id": 0, "title": 1, "department": 1}
+        )
+        screening['job_title'] = job['title'] if job else "Unknown"
+        screening['job_department'] = job.get('department') if job else None
+        
+        # Get resume info
+        resume = await db.resumes.find_one(
+            {"resume_id": screening['resume_id']},
+            {"_id": 0, "filename": 1}
+        )
+        screening['filename'] = resume['filename'] if resume else "Unknown"
+    
+    return screenings
+
+@api_router.get("/screenings/{screening_id}")
+async def get_screening(screening_id: str, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    screening = await db.screenings.find_one(
+        {"screening_id": screening_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not screening:
+        raise HTTPException(status_code=404, detail="Screening not found")
+    
+    # Get job info
+    job = await db.jobs.find_one(
+        {"job_id": screening['job_id']},
+        {"_id": 0}
+    )
+    screening['job'] = job
+    
+    # Get resume info
+    resume = await db.resumes.find_one(
+        {"resume_id": screening['resume_id']},
+        {"_id": 0, "filename": 1, "file_type": 1, "extracted_text": 1}
+    )
+    screening['resume'] = resume
+    
+    return screening
+
+@api_router.put("/screenings/{screening_id}/status")
+async def update_screening_status(screening_id: str, status_update: StatusUpdate, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Validate status
+    valid_statuses = ["new", "shortlisted", "interviewed", "offered", "hired", "rejected"]
+    if status_update.status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+    
+    screening = await db.screenings.find_one(
+        {"screening_id": screening_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not screening:
+        raise HTTPException(status_code=404, detail="Screening not found")
+    
+    now = datetime.now(timezone.utc)
+    status_history = screening.get("status_history", [])
+    status_history.append({
+        "status": status_update.status,
+        "changed_at": now,
+        "changed_by": user.user_id
+    })
+    
+    await db.screenings.update_one(
+        {"screening_id": screening_id},
+        {
+            "$set": {
+                "status": status_update.status,
+                "status_history": status_history,
+                "updated_at": now
+            }
+        }
+    )
+    
+    return {"message": "Status updated successfully", "status": status_update.status}
+
+@api_router.post("/screenings/bulk-update-status")
+async def bulk_update_status(request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    body = await request.json()
+    screening_ids = body.get("screening_ids", [])
+    new_status = body.get("status")
+    
+    if not screening_ids or not new_status:
+        raise HTTPException(status_code=400, detail="screening_ids and status are required")
+    
+    valid_statuses = ["new", "shortlisted", "interviewed", "offered", "hired", "rejected"]
+    if new_status not in valid_statuses:
+        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}")
+    
+    now = datetime.now(timezone.utc)
+    updated_count = 0
+    
+    for screening_id in screening_ids:
+        screening = await db.screenings.find_one(
+            {"screening_id": screening_id, "user_id": user.user_id}
+        )
+        if screening:
+            status_history = screening.get("status_history", [])
+            status_history.append({
+                "status": new_status,
+                "changed_at": now,
+                "changed_by": user.user_id
+            })
+            
+            await db.screenings.update_one(
+                {"screening_id": screening_id},
+                {
+                    "$set": {
+                        "status": new_status,
+                        "status_history": status_history,
+                        "updated_at": now
+                    }
+                }
+            )
+            updated_count += 1
+    
+    return {"message": f"Updated {updated_count} screening(s)", "count": updated_count}
+
+@api_router.get("/screenings/export/csv")
+async def export_screenings_csv(request: Request, job_id: Optional[str] = None, status: Optional[str] = None):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    query = {"user_id": user.user_id}
+    if job_id:
+        query["job_id"] = job_id
+    if status:
+        query["status"] = status
+    
+    screenings = await db.screenings.find(query, {"_id": 0}).sort("created_at", -1).to_list(length=None)
+    
+    # Build CSV content
+    import csv
+    import io
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "Screening ID", "Candidate Name", "Job ID", "Match Score", "Experience Score",
+        "Skills Score", "Keyword Score", "Recommended Action", "Status", "Summary",
+        "Strengths", "Gaps", "Key Highlights", "Created At"
+    ])
+    
+    # Rows
+    for screening in screenings:
+        writer.writerow([
+            screening.get('screening_id', ''),
+            screening.get('candidate_name', 'N/A'),
+            screening.get('job_id', ''),
+            screening.get('match_score', 0),
+            screening.get('experience_score', 0),
+            screening.get('skills_score', 0),
+            screening.get('keyword_score', 0),
+            screening.get('recommended_action', ''),
+            screening.get('status', 'new'),
+            screening.get('summary', ''),
+            '; '.join(screening.get('strengths', [])),
+            '; '.join(screening.get('gaps', [])),
+            '; '.join(screening.get('key_highlights', [])),
+            screening.get('created_at', '').isoformat() if screening.get('created_at') else ''
+        ])
+    
+    from fastapi.responses import StreamingResponse
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=screening_results.csv"}
+    )
+
+@api_router.get("/analytics/dashboard")
+async def get_dashboard_analytics(request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # 1. Total Candidates (Total resumes)
+    total_candidates = await db.resumes.count_documents({"user_id": user.user_id})
+    
+    # Trend (vs last 7 days)
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    new_candidates_last_7d = await db.resumes.count_documents({
+        "user_id": user.user_id,
+        "created_at": {"$gte": seven_days_ago}
+    })
+    
+    # 2. Active Job Openings
+    active_jobs_count = await db.jobs.count_documents({
+        "user_id": user.user_id,
+        "status": "active"
+    })
+    
+    # 3. Screening Pass Rate (Recommended / Total Screenings)
+    total_screenings_count = await db.screenings.count_documents({"user_id": user.user_id})
+    passed_screenings_count = await db.screenings.count_documents({
+        "user_id": user.user_id,
+        "recommended_action": {"$ne": "Reject"}
+    })
+    pass_rate = round((passed_screenings_count / total_screenings_count * 100), 1) if total_screenings_count > 0 else 0
+    
+    # 4. Time to Hire (Average days from creation to hired status)
+    # Pipeline query to calculate average duration
+    pipeline = [
+        {"$match": {"user_id": user.user_id, "status": "hired"}},
+        {"$project": {
+            "duration": {
+                "$divide": [
+                    {"$subtract": ["$updated_at", "$created_at"]},
+                    1000 * 60 * 60 * 24  # Convert milliseconds to days
+                ]
+            }
+        }},
+        {"$group": {"_id": None, "avg_time_to_hire": {"$avg": "$duration"}}}
+    ]
+    time_to_hire_result = await db.screenings.aggregate(pipeline).to_list(length=1)
+    avg_time_to_hire = round(time_to_hire_result[0]["avg_time_to_hire"], 1) if time_to_hire_result else 0
+    
+    # 5. Upcoming Interviews (Next 3)
+    now = datetime.now(timezone.utc)
+    upcoming_interviews = await db.calendar_events.find(
+        {"user_id": user.user_id, "start_datetime": {"$gte": now}},
+        {"_id": 0}  # Exclude MongoDB _id field
+    ).sort("start_datetime", 1).limit(3).to_list(length=3)
+    
+    # 6. Recent Activity Feed (Last 5 actions)
+    # Combine creation of jobs, screenings, and status updates if possible, or just screenings/jobs
+    recent_activity = []
+    
+    # Recent screenings
+    recent_screenings = await db.screenings.find(
+        {"user_id": user.user_id}
+    ).sort("created_at", -1).limit(5).to_list(length=5)
+    
+    for s in recent_screenings:
+        recent_activity.append({
+            "type": "screening",
+            "description": f"Screened candidate {s.get('candidate_name', 'Unknown')}",
+            "timestamp": s.get('created_at'),
+            "id": s.get('screening_id')
+        })
+        
+    # Recent jobs
+    recent_jobs = await db.jobs.find(
+        {"user_id": user.user_id}
+    ).sort("created_at", -1).limit(5).to_list(length=5)
+    
+    for j in recent_jobs:
+        recent_activity.append({
+            "type": "job",
+            "description": f"Created job {j.get('title', 'Unknown')}",
+            "timestamp": j.get('created_at'),
+            "id": j.get('job_id')
+        })
+        
+    # Sort and slice
+    recent_activity.sort(key=lambda x: x['timestamp'], reverse=True)
+    recent_activity = recent_activity[:5]
+    
+    # 7. Candidate Pipeline Funnel
+    status_counts = {
+        "new": 0,
+        "shortlisted": 0,
+        "interviewed": 0,
+        "offered": 0,
+        "hired": 0,
+        "rejected": 0
+    }
+    
+    pipeline_counts = await db.screenings.aggregate([
+        {"$match": {"user_id": user.user_id}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]).to_list(length=None)
+    
+    for item in pipeline_counts:
+        status = item["_id"]
+        if status in status_counts:
+            status_counts[status] = item["count"]
+            
+    # 8. Offer Acceptance Rate
+    offers_extended = status_counts["offered"] + status_counts["hired"] + status_counts["rejected"] # Rough approximation if we don't have separate 'offer_rejected' status
+    # Better: Hired / (Hired + Rejected after offer). 
+    # Since we don't track 'rejected after offer', we'll just use Hired / (Hired + Offered) as a proxy for now, or just return 0 if no data.
+    # User asked for "real numbers", so if 0, return 0.
+    offer_acceptance_rate = round((status_counts["hired"] / (status_counts["hired"] + status_counts["offered"]) * 100), 1) if (status_counts["hired"] + status_counts["offered"]) > 0 else 0
+    
+    # 9. Candidate Source Breakdown
+    # Aggregate by source from resumes
+    source_breakdown = await db.resumes.aggregate([
+        {"$match": {"user_id": user.user_id}},
+        {"$group": {"_id": "$source", "value": {"$sum": 1}}}
+    ]).to_list(length=None)
+    
+    sources = [{"name": item.get("_id", "Direct Upload") or "Direct Upload", "value": item["value"]} for item in source_breakdown]
+    if not sources:
+        sources = [{"name": "Direct Upload", "value": total_candidates}] if total_candidates > 0 else []
+
+    # 10. Top JDs by Match Score
+    # Existing logic reused/optimized
+    job_scores = await db.screenings.aggregate([
+        {"$match": {"user_id": user.user_id}},
+        {"$group": {
+            "_id": "$job_id",
+            "avg_score": {"$avg": "$match_score"},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"avg_score": -1}},
+        {"$limit": 5}
+    ]).to_list(length=5)
+    
+    top_jobs = []
+    for item in job_scores:
+        job = await db.jobs.find_one({"job_id": item["_id"]}, {"title": 1})
+        if job:
+            top_jobs.append({
+                "job_title": job.get("title", "Unknown"),
+                "avg_match_score": round(item["avg_score"], 1),
+                "candidate_count": item["count"]
+            })
+            
+    return {
+        "total_candidates": {"count": total_candidates, "trend": new_candidates_last_7d},
+        "active_jobs": active_jobs_count,
+        "screening_pass_rate": pass_rate,
+        "avg_time_to_hire": avg_time_to_hire,
+        "upcoming_interviews": upcoming_interviews,
+        "recent_activity": recent_activity,
+        "pipeline_funnel": status_counts,
+        "offer_acceptance_rate": offer_acceptance_rate,
+        "source_breakdown": sources,
+        "top_jobs": top_jobs,
+        # Keep old fields for backward compatibility if needed
+        "status_breakdown": status_counts,
+        "conversion_rate": offer_acceptance_rate
+    }
+
+
+@api_router.get("/analytics/detailed-reports")
+async def get_detailed_reports(request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Get all screenings for this user
+    screenings = await db.screenings.find({"user_id": user.user_id}).to_list(length=None)
+    
+    # Calculate metrics
+    total_applications = len(screenings)
+    
+    # Count by status
+    status_counts = {}
+    for screening in screenings:
+        status = screening.get('status', 'new')
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    screened = status_counts.get('new', 0) + status_counts.get('screening', 0)
+    shortlisted = status_counts.get('shortlisted', 0)
+    interviewed = status_counts.get('interviewed', 0)
+    offered = status_counts.get('offered', 0)
+    hired = status_counts.get('hired', 0)
+    rejected = status_counts.get('rejected', 0)
+    
+    # Pipeline data for funnel chart
+    pipeline_data = [
+        {"stage": "Applied", "count": total_applications},
+        {"stage": "Screened", "count": screened},
+        {"stage": "Shortlisted", "count": shortlisted},
+        {"stage": "Interviewed", "count": interviewed},
+        {"stage": "Offered", "count": offered},
+        {"stage": "Hired", "count": hired}
+    ]
+    
+    # Status distribution for pie chart
+    status_distribution = [
+        {"name": "Screening", "value": screened},
+        {"name": "Shortlisted", "value": shortlisted},
+        {"name": "Interviewed", "value": interviewed},
+        {"name": "Offered", "value": offered},
+        {"name": "Hired", "value": hired},
+        {"name": "Rejected", "value": rejected}
+    ]
+    # Filter out zero values
+    status_distribution = [s for s in status_distribution if s["value"] > 0]
+    
+    # Calculate rates
+    screening_pass_rate = round((shortlisted / screened * 100) if screened > 0 else 0, 1)
+    offer_acceptance_rate = round((hired / offered * 100) if offered > 0 else 0, 1)
+    
+    # Average time to hire (mock for now - would need timestamps)
+    avg_time_to_hire = 14  # days
+    
+    # Top jobs by application count
+    jobs_pipeline = await db.screenings.aggregate([
+        {"$match": {"user_id": user.user_id}},
+        {"$group": {
+            "_id": "$job_id",
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]).to_list(length=10)
+    
+    # Enrich with job details
+    top_jobs = []
+    for job_agg in jobs_pipeline:
+        job_id = job_agg["_id"]
+        job = await db.jobs.find_one({"job_id": job_id})
+        if job:
+            top_jobs.append({
+                "title": job.get("title", "Unknown"),
+                "applications": job_agg["count"]
+            })
+    
+    return {
+        "total_applications": total_applications,
+        "screened": screened,
+        "shortlisted": shortlisted,
+        "interviewed": interviewed,
+        "offered": offered,
+        "hired": hired,
+        "rejected": rejected,
+        "pipeline_data": pipeline_data,
+        "status_distribution": status_distribution,
+        "screening_pass_rate": screening_pass_rate,
+        "offer_acceptance_rate": offer_acceptance_rate,
+        "avg_time_to_hire": avg_time_to_hire,
+        "top_jobs": top_jobs
+    }
+
+
+@api_router.get("/resumes")
+async def list_resumes(request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    resumes = await db.resumes.find(
+        {"user_id": user.user_id},
+        {"_id": 0, "file_content": 0, "extracted_text": 0}  # Exclude large fields
+    ).sort("created_at", -1).to_list(length=None)
+    
+    return resumes
+
+# Calendar Event Models
+class CalendarEvent(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    event_id: str
+    user_id: str
+    title: str
+    description: Optional[str] = None
+    event_type: str = "interview"  # interview, meeting, reminder, other
+    start_datetime: datetime
+    end_datetime: datetime
+    location: Optional[str] = None
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    screening_id: Optional[str] = None
+    status: str = "scheduled"  # scheduled, completed, cancelled
+    color_tag: Optional[str] = "blue"  # blue, green, purple, orange, red
+    created_at: datetime
+    updated_at: datetime
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    event_type: str = "interview"
+    start_datetime: datetime
+    end_datetime: datetime
+    location: Optional[str] = None
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    screening_id: Optional[str] = None
+    status: str = "scheduled"
+    color_tag: Optional[str] = "blue"
+
+class CalendarEventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    event_type: Optional[str] = None
+    start_datetime: Optional[datetime] = None
+    end_datetime: Optional[datetime] = None
+    location: Optional[str] = None
+    candidate_name: Optional[str] = None
+    candidate_email: Optional[str] = None
+    screening_id: Optional[str] = None
+    status: Optional[str] = None
+    color_tag: Optional[str] = None
+
+# Calendar Endpoints
+@api_router.post("/calendar/events")
+async def create_calendar_event(event_data: CalendarEventCreate, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    event_id = f"event_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(timezone.utc)
+    
+    # Parse datetime strings to datetime objects with multiple format support
+    start_dt = event_data.start_datetime
+    if isinstance(start_dt, str):
+        try:
+            # Try ISO format first
+            start_dt = datetime.fromisoformat(start_dt.replace('Z', '+00:00'))
+        except:
+            try:
+                # Try alternative formats
+                start_dt = datetime.strptime(start_dt, "%Y-%m-%dT%H:%M:%S")
+                start_dt = start_dt.replace(tzinfo=timezone.utc)
+            except:
+                # Last resort - parse as is and add UTC
+                start_dt = datetime.fromisoformat(start_dt)
+                if start_dt.tzinfo is None:
+                    start_dt = start_dt.replace(tzinfo=timezone.utc)
+    
+    end_dt = event_data.end_datetime
+    if isinstance(end_dt, str):
+        try:
+            end_dt = datetime.fromisoformat(end_dt.replace('Z', '+00:00'))
+        except:
+            try:
+                end_dt = datetime.strptime(end_dt, "%Y-%m-%dT%H:%M:%S")
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            except:
+                end_dt = datetime.fromisoformat(end_dt)
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+    
+    # Ensure datetimes are UTC
+    if not isinstance(start_dt, datetime):
+        start_dt = now
+    if not isinstance(end_dt, datetime):
+        end_dt = now + timedelta(hours=1)
+    
+    event_doc = {
+        "event_id": event_id,
+        "user_id": user.user_id,
+        "title": event_data.title,
+        "description": event_data.description,
+        "event_type": event_data.event_type,
+        "start_datetime": start_dt,
+        "end_datetime": end_dt,
+        "location": event_data.location,
+        "candidate_name": event_data.candidate_name,
+        "candidate_email": event_data.candidate_email,
+        "screening_id": event_data.screening_id,
+        "status": event_data.status,
+        "color_tag": event_data.color_tag,
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    await db.calendar_events.insert_one(event_doc)
+    
+    created_event = await db.calendar_events.find_one(
+        {"event_id": event_id},
+        {"_id": 0}
+    )
+    
+    return created_event
+
+@api_router.get("/calendar/events")
+async def list_calendar_events(
+    request: Request,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    event_type: Optional[str] = None,
+    status: Optional[str] = None
+):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    query = {"user_id": user.user_id}
+    
+    if event_type:
+        query["event_type"] = event_type
+    
+    if status:
+        query["status"] = status
+    
+    if start_date or end_date:
+        date_query = {}
+        if start_date:
+            date_query["$gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+        if end_date:
+            date_query["$lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+        if date_query:
+            query["start_datetime"] = date_query
+    
+    events = await db.calendar_events.find(query, {"_id": 0}).sort("start_datetime", 1).to_list(length=None)
+    
+    return events
+
+@api_router.get("/calendar/events/{event_id}")
+async def get_calendar_event(event_id: str, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    event = await db.calendar_events.find_one(
+        {"event_id": event_id, "user_id": user.user_id},
+        {"_id": 0}
+    )
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return event
+
+@api_router.put("/calendar/events/{event_id}")
+async def update_calendar_event(event_id: str, event_data: CalendarEventUpdate, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    event = await db.calendar_events.find_one(
+        {"event_id": event_id, "user_id": user.user_id}
+    )
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    update_data = {k: v for k, v in event_data.dict(exclude_unset=True).items() if v is not None}
+    
+    if update_data:
+        update_data["updated_at"] = datetime.now(timezone.utc)
+        await db.calendar_events.update_one(
+            {"event_id": event_id},
+            {"$set": update_data}
+        )
+    
+    updated_event = await db.calendar_events.find_one(
+        {"event_id": event_id},
+        {"_id": 0}
+    )
+    
+    return updated_event
+
+@api_router.delete("/calendar/events/{event_id}")
+async def delete_calendar_event(event_id: str, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    result = await db.calendar_events.delete_one(
+        {"event_id": event_id, "user_id": user.user_id}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    return {"message": "Event deleted successfully"}
+
+# Email Draft Generator Models
+class EmailDraftRequest(BaseModel):
+    email_type: str  # interview_invitation, reschedule, offer_letter, rejection, follow_up
+    candidate_name: str
+    job_title: Optional[str] = None
+    company_name: Optional[str] = "Our Company"
+    interview_date: Optional[str] = None
+    interview_time: Optional[str] = None
+    interview_location: Optional[str] = None
+    tone: str = "professional"  # professional, friendly, formal
+    additional_details: Optional[str] = None
+    hr_name: Optional[str] = None
+    hr_email: Optional[str] = None
+
+class EmailDraftResponse(BaseModel):
+    subject: str
+    body: str
+    email_type: str
+
+# Email Draft Generator Endpoint
+@api_router.post("/emails/generate-draft")
+async def generate_email_draft(draft_request: EmailDraftRequest, request: Request):
+    user = await get_user_from_cookie(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Check if AI is available
+    if not is_ai_available():
+        logging.warning("Groq API key not configured - returning mock email")
+        return EmailDraftResponse(
+            subject=f"{draft_request.email_type.replace('_', ' ').title()} - {draft_request.job_title or 'Position'}",
+            body=f"Dear {draft_request.candidate_name},\n\n⚠️ AI email generation is currently disabled.\n\nTo enable AI-powered email generation:\n1. Get a FREE Groq API key from https://console.groq.com/keys\n2. Add it to your backend .env file as GROQ_API_KEY=your_key_here\n3. Restart the backend server\n\nBest regards,\n{draft_request.hr_name or 'HR Team'}",
+            email_type=draft_request.email_type
+        )
+    
+    # Map email_type to pipeline stage
+    type_to_stage = {
+        'follow_up': 'Screening',
+        'interview_invitation': 'Interview',
+        'offer_letter': 'Offer',
+        'rejection': 'Rejection'
+    }
+    
+    pipeline_stage = type_to_stage.get(draft_request.email_type, 'Screening')
+    
+    # Build comprehensive email generation prompt
+    prompt = f"""You are a professional HR communication assistant. Your job is to generate 
+personalized recruitment emails based on the candidate's pipeline stage, 
+selected tone, and the details provided.
+
+You will receive the following inputs:
+- Candidate Name: {draft_request.candidate_name}
+- Job Role: {draft_request.job_title}
+- Pipeline Stage: {pipeline_stage}
+- Tone: {draft_request.tone}
+- HR Name: {draft_request.hr_name or 'Not provided'}
+- Date: {draft_request.interview_date if hasattr(draft_request, 'interview_date') else 'Not provided'}
+- Time: {draft_request.interview_time if hasattr(draft_request, 'interview_time') else 'Not provided'}
+- Location/Meeting Link: {draft_request.interview_location if hasattr(draft_request, 'interview_location') else 'Not provided'}
+
+---
+
+## RULE 1 — WORD COUNT
+
+Every email you generate MUST be between 300 and 350 words.
+This includes the body only — subject line and sign-off are not counted.
+
+---
+
+## RULE 2 — MISSING FIELDS
+
+If any detail (date, time, location, meeting link, HR name, or job role) 
+is missing or not provided:
+- Do NOT leave a blank or placeholder like [DATE] or [MEETING LINK].
+- Instead, naturally replace it with: "we will inform you shortly" or 
+  "details will be shared with you soon."
+- The email must always read as complete and professional — never expose 
+  missing fields to the candidate.
+
+---
+
+## RULE 3 — STAGE-SPECIFIC LOGIC
+
+### 🔵 Screening
+- Inform the candidate their application is under review.
+- Let them know they've entered the screening stage.
+- Tone should be welcoming and encouraging.
+
+### 🟡 Shortlisted
+- Congratulate the candidate on being shortlisted.
+- Express genuine excitement about their profile.
+- Tone should be warm and positive.
+
+### 🟢 Interview
+- Inform the candidate they've been selected for an interview.
+- If date/time/location provided → include clearly.
+- If missing → replace with "we will inform you shortly."
+- Include preparation tips if tone is Friendly or Casual.
+
+### 🟠 Offer
+- Congratulate the candidate warmly on receiving an offer.
+- Keep the tone celebratory but professional.
+- Do not mention specific salary or compensation details.
+
+### 🔴 Rejection
+- Be empathetic, respectful, and kind.
+- Thank the candidate sincerely for their time and effort.
+- Encourage them to apply for future opportunities.
+- Never be blunt or cold. Always soften the message.
+
+---
+
+## RULE 4 — TONE BEHAVIOR
+
+### Professional
+- Formal language, structured sentences.
+- Salutation: "Dear [Name],"
+- Closing: "Best regards,"
+
+### Friendly
+- Warm, conversational, enthusiastic.
+- Salutation: "Hi [Name],"
+- Closing: "Warm regards,"
+
+### Urgent
+- Direct, concise, action-oriented.
+- Salutation: "Dear [Name],"
+- Closing: "Regards,"
+
+### Casual
+- Relaxed and human. Light language.
+- Salutation: "Hey [Name],"
+- Closing: "Cheers,"
+
+---
+
+## STRICT OUTPUT FORMAT
+
+Return ONLY valid JSON in this EXACT format:
+{{
+    "subject": "specific subject line based on stage and role",
+    "body": "complete email body with proper line breaks"
+}}
+
+Do NOT include markdown, code blocks, or extra text. ONLY the JSON object.
+
+---
+
+Generate the email now."""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an HR email assistant. You MUST ALWAYS respond with valid JSON only. Return format: {\"subject\": \"...\", \"body\": \"...\"}. Never return markdown or extra text."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"}  # Force JSON mode
+        )
+        
+        # Extract and clean JSON from response
+        if response_text.startswith('```'):
+            response_text = re.sub(r'^```(?:json)?\n?', '', response_text)
+            response_text = re.sub(r'\n?```$', '', response_text)
+        
+        # Clean control characters
+        response_text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', response_text)
+        
+        # Try to parse JSON
+        import json
+        try:
+            email_data = json.loads(response_text)
+        except json.JSONDecodeError as je:
+            logging.error(f"JSON decode error: {str(je)}")
+            logging.error(f"Response text: {response_text[:500]}")
+            
+            # Try to extract manually if JSON parsing fails
+            subject_match = re.search(r'"subject"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,', response_text, re.DOTALL)
+            body_match = re.search(r'"body"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
+            
+            if subject_match and body_match:
+                email_data = {
+                    "subject": subject_match.group(1).replace('\\"', '"'),
+                    "body": body_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                }
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail="AI returned invalid response format. Please try again."
+                )
+        
+        return EmailDraftResponse(
+            subject=email_data.get("subject", f"Regarding {draft_request.job_title}"),
+            body=email_data.get("body", "Email content generation failed"),
+            email_type=draft_request.email_type
+        )
+        
+    except Exception as e:
+        logging.error(f"Email generation error: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate email: {str(e)}"
+        )
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Include API router
+app.include_router(api_router)
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8001))
+    uvicorn.run(app, host="0.0.0.0", port=port)
