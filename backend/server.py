@@ -434,7 +434,14 @@ the same JD, and the same resume gets different scores against different JDs.
 
 ---
 
-Return ONLY valid JSON in this EXACT format:
+## CRITICAL OUTPUT RULES
+
+1. **ALWAYS return valid JSON** - Never return plain text, warnings, or explanations
+2. **Even for invalid JDs** - Return JSON with low scores and explanation in detailed_analysis
+3. **No markdown** - No ```json``` blocks, just pure JSON
+4. **No extra text** - Start with {{ and end with }}
+
+Return ONLY this JSON format:
 {{
     "match_score": <0-100 integer>,
     "experience_score": <0-100 integer>,
@@ -445,10 +452,10 @@ Return ONLY valid JSON in this EXACT format:
     "gaps": ["<gap 1>", "<gap 2>", "<gap 3>"],
     "key_highlights": ["<highlight 1>", "<highlight 2>", "<highlight 3>"],
     "recommended_action": "<Interview|Maybe|Reject>",
-    "detailed_analysis": "<Honest paragraph with evidence>"
+    "detailed_analysis": "<Honest paragraph with evidence. Include JD warnings here if needed>"
 }}
 
-BE CRITICAL. BE STRICT. Score based on evidence only. Return ONLY valid JSON."""
+BE CRITICAL. BE STRICT. Score based on evidence only. Return ONLY valid JSON - nothing else."""
 
         response = groq_client.chat.completions.create(
             model='llama-3.3-70b-versatile',
