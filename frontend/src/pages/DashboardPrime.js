@@ -178,39 +178,47 @@ const DashboardPrime = () => {
             </CardContent>
           </Card>
 
-          {/* Calendar Events */}
+          {/* Recent Screenings */}
           <Card className="glass-card border-primary/10">
             <CardHeader>
-              <CardTitle>Calendar Events</CardTitle>
-              <CardDescription>Upcoming scheduled events</CardDescription>
+              <CardTitle>Recent Screenings</CardTitle>
+              <CardDescription>Latest AI screening results</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {metrics?.upcoming_interviews?.length > 0 ? (
-                  metrics.upcoming_interviews.map((event, i) => (
-                    <div key={i} className="flex items-center gap-4 p-3 rounded-lg bg-elevated/50 border border-border/50">
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                        {new Date(event.start_datetime).getDate()}
+              <div className="space-y-3">
+                {metrics?.recent_activity?.filter(activity => activity.type === 'screening').slice(0, 5).length > 0 ? (
+                  metrics.recent_activity.filter(activity => activity.type === 'screening').slice(0, 5).map((activity, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-elevated/50 border border-border/50 hover:border-primary/30 transition-colors">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                          activity.score >= 80 ? 'bg-green-500' : 
+                          activity.score >= 60 ? 'bg-yellow-500' : 
+                          'bg-red-500'
+                        }`}>
+                          {activity.score || 0}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{activity.candidate_name || 'Candidate'}</p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {activity.job_title || 'Position'} • {new Date(activity.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{event.title || event.candidate_name || 'Event'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {new Date(event.start_datetime).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(event.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                        {event.event_type && (
-                          <p className="text-xs text-primary mt-1">{event.event_type}</p>
-                        )}
+                      <div className="text-xs font-medium text-primary">
+                        {activity.recommended_action || 'Review'}
                       </div>
                     </div>
                   ))
                 ) : (
                   <div className="text-center text-muted-foreground py-8">
-                    <Calendar className="w-12 h-12 mx-auto mb-2 opacity-20" />
-                    <p>No upcoming events</p>
+                    <svg className="w-12 h-12 mx-auto mb-2 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p>No recent screenings</p>
                   </div>
                 )}
-                <Button variant="ghost" className="w-full text-xs" size="sm" onClick={() => navigate('/calendar')}>
-                  View Calendar <ArrowRight className="ml-2 h-3 w-3" />
+                <Button variant="ghost" className="w-full text-xs" size="sm" onClick={() => navigate('/screening')}>
+                  View All Screenings <ArrowRight className="ml-2 h-3 w-3" />
                 </Button>
               </div>
             </CardContent>
