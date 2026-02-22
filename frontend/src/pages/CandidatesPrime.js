@@ -507,7 +507,7 @@ const Candidates = () => {
                             <Eye className="w-4 h-4 text-foreground-secondary" />
                           </button>
                           <button 
-                            onClick={() => navigate(`/emails?candidate=${candidate._id}`)}
+                            onClick={() => navigate(`/emails?candidate=${candidate.screening_id}`)}
                             className="p-2 hover:bg-surface rounded-full transition-colors"
                             title="Send Email"
                           >
