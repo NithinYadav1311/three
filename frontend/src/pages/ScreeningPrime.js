@@ -384,6 +384,188 @@ const ScreeningPrime = () => {
           loadJobs();
         }} 
       />
+
+      {/* Detailed Profile Modal */}
+      <AnimatePresence>
+        {selectedCandidate && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+            onClick={() => setSelectedCandidate(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-card border border-border rounded-3xl p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h2 className="text-3xl font-bold text-foreground mb-2">
+                    {selectedCandidate.candidate_name || 'Candidate Profile'}
+                  </h2>
+                  <p className="text-muted-foreground">{selectedCandidate.filename}</p>
+                </div>
+                <button
+                  onClick={() => setSelectedCandidate(null)}
+                  className="p-2 hover:bg-elevated rounded-full transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+              </div>
+
+              {/* Score Card */}
+              <div className="grid grid-cols-4 gap-4 mb-8">
+                <Card className="bg-elevated/50">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Overall Match</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className={`text-3xl font-bold ${
+                        selectedCandidate.match_score >= 80 ? 'text-green-500' : 
+                        selectedCandidate.match_score >= 60 ? 'text-yellow-500' : 
+                        'text-red-500'
+                      }`}>
+                        {selectedCandidate.match_score}
+                      </span>
+                      <span className="text-sm text-muted-foreground">/100</span>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="bg-elevated/50">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Skills</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-primary">
+                        {selectedCandidate.skills_score || 0}
+                      </span>
+                      <span className="text-sm text-muted-foreground">/100</span>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="bg-elevated/50">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Experience</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-primary">
+                        {selectedCandidate.experience_score || 0}
+                      </span>
+                      <span className="text-sm text-muted-foreground">/100</span>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                <Card className="bg-elevated/50">
+                  <CardContent className="p-4">
+                    <p className="text-xs text-muted-foreground mb-1">Keywords</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-primary">
+                        {selectedCandidate.keyword_score || 0}
+                      </span>
+                      <span className="text-sm text-muted-foreground">/100</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Recommendation */}
+              <div className="mb-6">
+                <Badge 
+                  variant={selectedCandidate.recommended_action === 'Interview' ? 'default' : 'secondary'}
+                  className="text-sm px-4 py-1"
+                >
+                  Recommendation: {selectedCandidate.recommended_action}
+                </Badge>
+              </div>
+
+              {/* Summary */}
+              <Card className="mb-6 bg-elevated/30">
+                <CardHeader>
+                  <CardTitle className="text-lg">Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-foreground leading-relaxed">
+                    {selectedCandidate.summary || 'No summary available'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Detailed Analysis */}
+              {selectedCandidate.detailed_analysis && (
+                <Card className="mb-6 bg-elevated/30">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Detailed Analysis</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap">
+                      {selectedCandidate.detailed_analysis}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Strengths & Gaps */}
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                <Card className="bg-green-500/5 border-green-500/20">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-green-500">Strengths</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {(selectedCandidate.strengths || []).map((strength, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm">
+                          <CheckCircle className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span>{strength}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-red-500/5 border-red-500/20">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-red-500">Gaps</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {(selectedCandidate.gaps || []).map((gap, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm">
+                          <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                          <span>{gap}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Key Highlights */}
+              {selectedCandidate.key_highlights && selectedCandidate.key_highlights.length > 0 && (
+                <Card className="bg-elevated/30">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Key Highlights</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-2">
+                      {selectedCandidate.key_highlights.map((highlight, idx) => (
+                        <li key={idx} className="flex items-start gap-2 text-sm">
+                          <div className="h-2 w-2 rounded-full bg-primary mt-2 flex-shrink-0" />
+                          <span>{highlight}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </PrimeLayout>
   );
 };
