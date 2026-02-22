@@ -168,8 +168,8 @@ const Candidates = () => {
       // 1. OPTIMISTIC UPDATE - Update UI immediately for THIS candidate only
       setCandidates(prevCandidates => 
         prevCandidates.map(candidate => {
-          // Only update the specific candidate
-          if (candidate._id === candidateId) {
+          // Only update the specific candidate using screening_id
+          if (candidate.screening_id === candidateId) {
             console.log(`Updating candidate ${candidateId} from ${candidate.status} to ${newStatus}`);
             return { ...candidate, status: newStatus };
           }
