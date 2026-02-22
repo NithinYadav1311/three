@@ -354,7 +354,8 @@ const JobsPrime = () => {
                     <select
                       value={formData.status}
                       onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                      className="w-full px-4 py-3 rounded-2xl bg-elevated border border-border focus:border-primary focus:outline-none cursor-pointer"
+                      className="w-full px-4 py-3 rounded-2xl bg-elevated border border-border focus:border-primary focus:outline-none cursor-pointer relative z-10"
+                      style={{ position: 'relative', zIndex: 10 }}
                       disabled={viewMode}
                     >
                       <option value="active">Active</option>
