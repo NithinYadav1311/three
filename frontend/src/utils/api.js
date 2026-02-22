@@ -4,7 +4,7 @@ import { getSessionId } from './session';
 
 // IMPORTANT: Set REACT_APP_BACKEND_URL in your Cloudflare Pages environment variables.
 // Without it, API calls fall back to the Render backend URL below.
-const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com/api';
+const API_BASE = process.env.REACT_APP_BACKEND_URL || 'https://three-m0vz.onrender.com/api/';
 
 if (!process.env.REACT_APP_BACKEND_URL) {
   console.warn(
