@@ -1882,121 +1882,49 @@ Generate the email now."""
             temperature=0.3
         )
         
-        response_text = response.choices[0].message.content.strip()
-
-Candidate Name: {draft_request.candidate_name}
-Job Title: {draft_request.job_title}
-Company: {draft_request.company_name}
-New Interview Date: {draft_request.interview_date or 'TBD'}
-New Interview Time: {draft_request.interview_time or 'TBD'}
-Tone: {draft_request.tone}
-Additional Details: {draft_request.additional_details or 'None'}{hr_info}
-
-IMPORTANT GUIDELINES:
-- Keep email concise: 300-340 words total
-- Structure: 3-4 paragraphs, each 80-120 words
-- DO NOT include any confidential information
-- If new date/time is missing or 'TBD', state "Updated details will be informed shortly"
-- Be warm, empathetic, and professional
-
-Email structure:
-1. Paragraph 1 (80-100 words): Apologize for the inconvenience of rescheduling. Brief, professional reason if appropriate (scheduling conflict, interviewer availability). Express continued strong interest in their candidacy.
-
-2. Paragraph 2 (90-110 words): Clearly state the new interview date, time, and location (or "Updated details will be informed shortly" if missing). Confirm that all other aspects of the interview remain the same. Mention interview format and duration.
-
-3. Paragraph 3 (80-100 words): Ask them to confirm their availability for the new time. Offer flexibility if this doesn't work - emphasize willingness to find an alternative. Provide clear instructions for responding.
-
-4. Paragraph 4 (50-70 words): Closing - thank them for their understanding, express enthusiasm about meeting them, professional sign-off with HR contact.
-
-Make it human, warm, and empathetic. Avoid clichés.
-
-Return ONLY valid JSON in this EXACT format with properly escaped characters:
-{{
-    "subject": "email subject line here",
-    "body": "complete email body with \\n for line breaks and HR signature at the end"
-}}
-
-Do NOT include any markdown, code blocks, or extra text. ONLY the JSON object.""",
-        "offer_letter": f"""Generate a professional job offer email (300-340 words, 3-4 paragraphs, approximately 80-120 words per paragraph).
-
-Candidate Name: {draft_request.candidate_name}
-Job Title: {draft_request.job_title}
-Company: {draft_request.company_name}
-Tone: {draft_request.tone}
-Additional Details: {draft_request.additional_details or 'None'}{hr_info}
-
-IMPORTANT GUIDELINES:
-- Keep email concise: 300-340 words total
-- Structure: 3-4 paragraphs, each 80-120 words
-- DO NOT include confidential compensation details (NO salary, benefits, perks, stock options, bonuses)
-- If specific details are needed, state "Details will be provided in the formal offer letter"
-- Be warm, exciting, and professional
-
-Email structure:
-1. Paragraph 1 (80-100 words): Enthusiastic congratulations! Express excitement about extending the offer. Highlight what impressed the team about their candidacy. Make them feel valued and wanted.
-
-2. Paragraph 2 (90-110 words): Formal offer statement for the [Job Title] position. Mention that complete compensation and benefits details will be provided in the formal offer letter document (attached or coming separately). Note employment type (full-time/part-time/contract) and tentative start date if known, or state "Start date details will be discussed".
-
-3. Paragraph 3 (80-100 words): Next steps - mention formal offer letter coming, timeline for their decision (typical 1-2 weeks), onboarding process preview. Encourage questions and offer to schedule a call to discuss any aspects of the offer.
-
-4. Paragraph 4 (50-70 words): Closing - express genuine excitement about them potentially joining the team. Professional sign-off with HR contact.
-
-Make it warm, exciting, and celebratory while remaining professional. This is a significant moment.
-
-Return ONLY valid JSON in this EXACT format with properly escaped characters:
-{{
-    "subject": "email subject line here",
-    "body": "complete email body with \\n for line breaks and HR signature at the end"
-}}
-
-Do NOT include any markdown, code blocks, or extra text. ONLY the JSON object.""",
-        "rejection": f"""Generate a professional, respectful job rejection email (300-340 words, 3-4 paragraphs, approximately 80-120 words per paragraph).
-
-Candidate Name: {draft_request.candidate_name}
-Job Title: {draft_request.job_title}
-Company: {draft_request.company_name}
-Tone: {draft_request.tone}
-Additional Details: {draft_request.additional_details or 'None'}{hr_info}
-
-IMPORTANT GUIDELINES:
-- Keep email concise: 300-340 words total
-- Structure: 3-4 paragraphs, each 80-120 words
-- DO NOT include any confidential information
-- Be respectful, empathetic, and encouraging
-- Leave a positive impression of the company
-
-Email structure:
-1. Paragraph 1 (80-100 words): Thank them sincerely for their time and interest in the position. Acknowledge the effort they put into the interview process. Show genuine appreciation for the opportunity to learn about their background.
-
-2. Paragraph 2 (90-110 words): Deliver the decision clearly but respectfully - we've decided to move forward with another candidate. Provide brief, constructive context: highly competitive process, strong pool of candidates, or specific role requirements. Emphasize this was a difficult decision.
-
-3. Paragraph 3 (80-100 words): Highlight positive aspects of their candidacy - specific skills, experience, or qualities that impressed the team. Encourage them to apply for future openings that match their profile. Keep the door open for potential future opportunities.
-
-4. Paragraph 4 (50-70 words): Closing - wish them success in their job search and career. Express hope to stay connected (LinkedIn, future roles). Professional sign-off with HR contact.
-
-Make it empathetic, respectful, and genuinely encouraging. Leave candidates with a positive impression.
-
-Return ONLY valid JSON in this EXACT format with properly escaped characters:
-{{
-    "subject": "email subject line here",
-    "body": "complete email body with \\n for line breaks and HR signature at the end"
-}}
-
-Do NOT include any markdown, code blocks, or extra text. ONLY the JSON object.""",
-        "follow_up": f"""Generate a professional follow-up email after interview (300-340 words, 3-4 paragraphs, approximately 80-120 words per paragraph).
-
-Candidate Name: {draft_request.candidate_name}
-Job Title: {draft_request.job_title}
-Company: {draft_request.company_name}
-Tone: {draft_request.tone}
-Additional Details: {draft_request.additional_details or 'None'}{hr_info}
-
-IMPORTANT GUIDELINES:
-- Keep email concise: 300-340 words total
-- Structure: 3-4 paragraphs, each 80-120 words
-- DO NOT include any confidential information
-- Be warm, reassuring, and professional
-- Keep the candidate engaged and informed
+        # Extract and clean JSON from response
+        if response_text.startswith('```'):
+            response_text = re.sub(r'^```(?:json)?\n?', '', response_text)
+            response_text = re.sub(r'\n?```$', '', response_text)
+        
+        # Clean control characters
+        response_text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', response_text)
+        
+        # Try to parse JSON
+        import json
+        try:
+            email_data = json.loads(response_text)
+        except json.JSONDecodeError as je:
+            logging.error(f"JSON decode error: {str(je)}")
+            logging.error(f"Response text: {response_text[:500]}")
+            
+            # Try to extract manually if JSON parsing fails
+            subject_match = re.search(r'"subject"\s*:\s*"((?:[^"\\]|\\.)*)"\s*,', response_text, re.DOTALL)
+            body_match = re.search(r'"body"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
+            
+            if subject_match and body_match:
+                email_data = {
+                    "subject": subject_match.group(1).replace('\\"', '"'),
+                    "body": body_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                }
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail="AI returned invalid response format. Please try again."
+                )
+        
+        return EmailDraftResponse(
+            subject=email_data.get("subject", f"Regarding {draft_request.job_title}"),
+            body=email_data.get("body", "Email content generation failed"),
+            email_type=draft_request.email_type
+        )
+        
+    except Exception as e:
+        logging.error(f"Email generation error: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Failed to generate email: {str(e)}"
+        )
 
 Email structure:
 1. Paragraph 1 (80-100 words): Thank them for taking the time to interview. Express that it was a pleasure meeting them and learning about their experience. Mention something specific from the interview conversation that stood out positively.
