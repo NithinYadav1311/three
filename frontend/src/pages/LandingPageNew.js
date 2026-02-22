@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowRight, Sparkles, Brain, Zap, Target, TrendingUp, Users, Shield, CheckCircle2 } from 'lucide-react';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-// Removed UnicornScene due to loading issues
+import UnicornScene from "unicornstudio-react";
 
 const LandingPageNew = () => {
   const navigate = useNavigate();
@@ -88,7 +88,7 @@ const LandingPageNew = () => {
         </div>
       </motion.nav>
 
-      {/* Hero Section with Animated Gradient Background */}
+      {/* Hero Section with Unicorn Studio */}
       <section ref={heroRef} className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20">
         <motion.div 
           style={{ y: heroY, opacity: heroOpacity }}
@@ -97,58 +97,20 @@ const LandingPageNew = () => {
           {/* Removed middle Get Started button as per user request */}
         </motion.div>
 
-        {/* Animated Gradient Background (Replacement for Unicorn Studio) */}
+        {/* Unicorn Studio WebGL Scene */}
         <div className="absolute inset-0 z-0">
-          {/* Animated gradient orbs */}
-          <motion.div
-            className="absolute -top-40 -right-40 w-[600px] h-[600px] rounded-full opacity-20 blur-3xl"
+          <UnicornScene 
+            projectId="e1enjLKX9nbRQp4KW3Wq" 
+            sdkUrl="https://cdn.jsdelivr.net/gh/hiunicornstudio/unicornstudio.js@v2.0.5/dist/unicornStudio.umd.js"
+            width="100%" 
+            height="100%" 
             style={{
-              background: 'radial-gradient(circle, rgba(251, 191, 36, 0.4) 0%, transparent 70%)',
-              x: mousePosition.x * 3,
-              y: mousePosition.y * 3,
-            }}
-            animate={{
-              scale: [1, 1.1, 1],
-            }}
-            transition={{
-              duration: 8,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-          
-          <motion.div
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-15 blur-3xl"
-            style={{
-              background: 'radial-gradient(circle, rgba(234, 179, 8, 0.3) 0%, transparent 70%)',
-              x: mousePosition.x * -1.5,
-              y: mousePosition.y * -1.5,
-            }}
-            animate={{
-              scale: [1, 1.15, 1],
-              rotate: [0, 90, 0],
-            }}
-            transition={{
-              duration: 15,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-          
-          <motion.div
-            className="absolute -bottom-40 -left-40 w-[500px] h-[500px] rounded-full opacity-20 blur-3xl"
-            style={{
-              background: 'radial-gradient(circle, rgba(217, 119, 6, 0.4) 0%, transparent 70%)',
-              x: mousePosition.x * -2,
-              y: mousePosition.y * -2,
-            }}
-            animate={{
-              scale: [1, 1.2, 1],
-            }}
-            transition={{
-              duration: 10,
-              repeat: Infinity,
-              ease: "easeInOut"
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0.6,
             }}
           />
         </div>
