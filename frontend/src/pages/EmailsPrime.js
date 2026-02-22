@@ -19,7 +19,7 @@ const EmailsPrime = () => {
   const [generating, setGenerating] = useState(false);
   const [generatedEmail, setGeneratedEmail] = useState(null);
   const [copied, setCopied] = useState(false);
-  
+
   // Enhanced form fields
   const [hrName, setHrName] = useState('');
   const [interviewDate, setInterviewDate] = useState('');
@@ -68,6 +68,14 @@ const EmailsPrime = () => {
     setGenerating(true);
     setGeneratedEmail(null);
 
+    // Find selected candidate safely
+    const selectedCandidateObj = candidates.find(c => c.screening_id === selectedCandidate);
+    if (!selectedCandidateObj) {
+      toast.error('Selected candidate not found. Please try again.');
+      setGenerating(false);
+      return;
+    }
+
     try {
       // Map frontend stage to backend email_type
       const stageToEmailType = {
@@ -77,20 +85,20 @@ const EmailsPrime = () => {
         'offer': 'offer_letter',
         'rejection': 'rejection'
       };
-      
+
       const payload = {
         email_type: stageToEmailType[emailStage] || 'follow_up',
-        candidate_name: candidate.candidate_name,
-        job_title: candidate.job_title || 'Position',
+        candidate_name: selectedCandidateObj.candidate_name || 'Candidate',
+        job_title: selectedCandidateObj.job_title || 'Position',
         company_name: 'Our Company',
         tone: emailTone
       };
-      
+
       // Add HR name if provided
       if (hrName) {
         payload.hr_name = hrName;
       }
-      
+
       // Add interview details if stage is interview
       if (emailStage === 'interview' || emailStage === 'shortlisted') {
         if (interviewDate && interviewTime) {
@@ -108,7 +116,7 @@ const EmailsPrime = () => {
       toast.success('Email generated successfully!');
     } catch (error) {
       console.error('Failed to generate email:', error);
-      
+
       // Handle validation errors (array of error objects)
       if (error.response?.data?.detail && Array.isArray(error.response.data.detail)) {
         const errorMessages = error.response.data.detail.map(err => err.msg || err).join(', ');
@@ -131,7 +139,7 @@ const EmailsPrime = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const candidate = candidates.find(c => c._id === selectedCandidate);
+  const candidate = candidates.find(c => c.screening_id === selectedCandidate);
 
   if (loading) {
     return (
@@ -155,7 +163,7 @@ const EmailsPrime = () => {
                 AI-powered candidate communication. Less typing, more hiring.
               </p>
             </div>
-            
+
             <button
               onClick={loadCandidates}
               className="capsule-hover px-4 py-2 flex items-center gap-2 text-sm font-medium rounded-full"
@@ -174,7 +182,7 @@ const EmailsPrime = () => {
               <div className="glass-card rounded-3xl p-6 space-y-6">
                 <div>
                   <h3 className="font-bold text-foreground mb-4">Email Configuration</h3>
-                  
+
                   {/* Candidate Selection */}
                   <div className="space-y-4">
                     <div>
@@ -187,9 +195,9 @@ const EmailsPrime = () => {
                         className="w-full px-4 py-3 rounded-2xl bg-elevated border border-border focus:border-primary focus:outline-none cursor-pointer"
                       >
                         <option value="">Choose a candidate...</option>
-                        {candidates.map((candidate) => (
-                          <option key={candidate._id} value={candidate._id}>
-                            {candidate.candidate_name} - {candidate.match_score}% match
+                        {candidates.map((c) => (
+                          <option key={c.screening_id} value={c.screening_id}>
+                            {c.candidate_name} - {c.match_score}% match
                           </option>
                         ))}
                       </select>
@@ -265,7 +273,7 @@ const EmailsPrime = () => {
                         <p className="text-sm font-semibold text-primary">
                           {emailStage === 'interview' ? 'Interview Details' : 'Next Steps Details (Optional)'}
                         </p>
-                        
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-medium text-foreground-secondary mb-2">
@@ -279,7 +287,7 @@ const EmailsPrime = () => {
                               required={emailStage === 'interview'}
                             />
                           </div>
-                          
+
                           <div>
                             <label className="block text-xs font-medium text-foreground-secondary mb-2">
                               Time {emailStage === 'interview' ? '*' : ''}
@@ -337,8 +345,8 @@ const EmailsPrime = () => {
                 )}
 
                 {/* Generate Button */}
-                <PrimeButton 
-                  onClick={generateEmail} 
+                <PrimeButton
+                  onClick={generateEmail}
                   disabled={!selectedCandidate || generating}
                   className="w-full"
                 >

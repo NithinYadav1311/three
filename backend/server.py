@@ -6,8 +6,8 @@ from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from pydantic import BaseModel, Field, ConfigDict, field_validator
+from typing import List, Optional, Union
 import uuid
 from datetime import datetime, timezone, timedelta
 import requests
@@ -82,6 +82,19 @@ class JobDescription(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+def _coerce_to_list(v) -> List[str]:
+    """Convert a plain string to a list; handle None and existing lists."""
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [item for item in v if item]
+    if isinstance(v, str):
+        if not v.strip():
+            return []
+        lines = [line.strip() for line in v.splitlines() if line.strip()]
+        return lines if lines else [v.strip()]
+    return []
+
 class JobDescriptionCreate(BaseModel):
     title: str
     department: Optional[str] = None
@@ -89,10 +102,15 @@ class JobDescriptionCreate(BaseModel):
     employment_type: str = "Full-time"
     experience_level: str = "Mid"
     description: str
-    requirements: List[str] = []
-    nice_to_have: List[str] = []
+    requirements: Union[List[str], str] = []
+    nice_to_have: Union[List[str], str] = []
     salary_range: Optional[SalaryRange] = None
     status: str = "draft"
+
+    @field_validator('requirements', 'nice_to_have', mode='before')
+    @classmethod
+    def coerce_to_list(cls, v):
+        return _coerce_to_list(v)
 
 class JobDescriptionUpdate(BaseModel):
     title: Optional[str] = None
@@ -101,10 +119,15 @@ class JobDescriptionUpdate(BaseModel):
     employment_type: Optional[str] = None
     experience_level: Optional[str] = None
     description: Optional[str] = None
-    requirements: Optional[List[str]] = None
-    nice_to_have: Optional[List[str]] = None
+    requirements: Optional[Union[List[str], str]] = None
+    nice_to_have: Optional[Union[List[str], str]] = None
     salary_range: Optional[SalaryRange] = None
     status: Optional[str] = None
+
+    @field_validator('requirements', 'nice_to_have', mode='before')
+    @classmethod
+    def coerce_to_list(cls, v):
+        return _coerce_to_list(v)
 
 class Resume(BaseModel):
     model_config = ConfigDict(extra="ignore")
