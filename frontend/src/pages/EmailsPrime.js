@@ -246,7 +246,7 @@ const EmailsPrime = () => {
                     </div>
 
                     {/* HR Name */}
-                    <div>
+                    <div className="mt-6">
                       <label className="block text-sm font-medium text-foreground mb-2">
                         HR Name (Optional)
                       </label>
@@ -261,12 +261,12 @@ const EmailsPrime = () => {
 
                     {/* Interview Details - Show for interview or shortlisted stage */}
                     {(emailStage === 'interview' || emailStage === 'shortlisted') && (
-                      <div className="space-y-4 p-4 rounded-2xl bg-elevated/50 border border-primary/20">
+                      <div className="space-y-4 p-4 rounded-2xl bg-elevated/50 border border-primary/20 mt-6">
                         <p className="text-sm font-semibold text-primary">
                           {emailStage === 'interview' ? 'Interview Details' : 'Next Steps Details (Optional)'}
                         </p>
                         
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="block text-xs font-medium text-foreground-secondary mb-2">
                               Date {emailStage === 'interview' ? '*' : ''}
