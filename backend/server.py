@@ -1748,51 +1748,141 @@ async def generate_email_draft(draft_request: EmailDraftRequest, request: Reques
     user = await get_user_from_cookie(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    # Create prompt based on email type
-    hr_info = ""
-    if draft_request.hr_name or draft_request.hr_email:
-        hr_info = f"\nHR Contact: {draft_request.hr_name or 'HR Team'}"
-        if draft_request.hr_email:
-            hr_info += f" ({draft_request.hr_email})"
     
-    email_templates = {
-        "interview_invitation": f"""Generate a professional interview invitation email (300-340 words, 3-4 paragraphs, approximately 80-120 words per paragraph).
+    # Check if AI is available
+    if not is_ai_available():
+        logging.warning("Groq API key not configured - returning mock email")
+        return EmailDraftResponse(
+            subject=f"{draft_request.email_type.replace('_', ' ').title()} - {draft_request.job_title or 'Position'}",
+            body=f"Dear {draft_request.candidate_name},\n\n⚠️ AI email generation is currently disabled.\n\nTo enable AI-powered email generation:\n1. Get a FREE Groq API key from https://console.groq.com/keys\n2. Add it to your backend .env file as GROQ_API_KEY=your_key_here\n3. Restart the backend server\n\nBest regards,\n{draft_request.hr_name or 'HR Team'}",
+            email_type=draft_request.email_type
+        )
+    
+    # Map email_type to pipeline stage
+    type_to_stage = {
+        'follow_up': 'Screening',
+        'interview_invitation': 'Interview',
+        'offer_letter': 'Offer',
+        'rejection': 'Rejection'
+    }
+    
+    pipeline_stage = type_to_stage.get(draft_request.email_type, 'Screening')
+    
+    # Build comprehensive email generation prompt
+    prompt = f"""You are a professional HR communication assistant. Your job is to generate 
+personalized recruitment emails based on the candidate's pipeline stage, 
+selected tone, and the details provided.
 
-Candidate Name: {draft_request.candidate_name}
-Job Title: {draft_request.job_title}
-Company: {draft_request.company_name}
-Interview Date: {draft_request.interview_date or 'TBD'}
-Interview Time: {draft_request.interview_time or 'TBD'}
-Location: {draft_request.interview_location or 'TBD'}
-Tone: {draft_request.tone}
-Additional Details: {draft_request.additional_details or 'None'}{hr_info}
+You will receive the following inputs:
+- Candidate Name: {draft_request.candidate_name}
+- Job Role: {draft_request.job_title}
+- Pipeline Stage: {pipeline_stage}
+- Tone: {draft_request.tone}
+- HR Name: {draft_request.hr_name or 'Not provided'}
+- Date: {draft_request.interview_date if hasattr(draft_request, 'interview_date') else 'Not provided'}
+- Time: {draft_request.interview_time if hasattr(draft_request, 'interview_time') else 'Not provided'}
+- Location/Meeting Link: {draft_request.interview_location if hasattr(draft_request, 'interview_location') else 'Not provided'}
 
-IMPORTANT GUIDELINES:
-- Keep email concise: 300-340 words total
-- Structure: 3-4 paragraphs, each 80-120 words
-- DO NOT include any confidential information (no salary, compensation, or benefits details)
-- If date/time/location is missing or 'TBD', state "Details will be informed shortly"
-- Be warm and professional, not too formal
+---
 
-Email structure:
-1. Paragraph 1 (80-100 words): Warm congratulations on moving forward in the hiring process. Brief excitement about their candidacy.
+## RULE 1 — WORD COUNT
 
-2. Paragraph 2 (90-110 words): Interview logistics - date, time, location (or "Details will be informed shortly" if missing). Mention interview format (virtual/in-person), expected duration (45-60 minutes), and who they'll meet with if known.
+Every email you generate MUST be between 300 and 350 words.
+This includes the body only — subject line and sign-off are not counted.
 
-3. Paragraph 3 (80-100 words): What to prepare - bring resume copy, be ready to discuss experience and the role, prepare questions. For virtual interviews, mention testing connection beforehand.
+---
 
-4. Paragraph 4 (50-70 words): Closing - encourage questions, express enthusiasm, professional sign-off with HR contact.
+## RULE 2 — MISSING FIELDS
 
-Make it human, warm, and professional. Avoid clichés.
+If any detail (date, time, location, meeting link, HR name, or job role) 
+is missing or not provided:
+- Do NOT leave a blank or placeholder like [DATE] or [MEETING LINK].
+- Instead, naturally replace it with: "we will inform you shortly" or 
+  "details will be shared with you soon."
+- The email must always read as complete and professional — never expose 
+  missing fields to the candidate.
 
-Return ONLY valid JSON in this EXACT format with properly escaped characters:
+---
+
+## RULE 3 — STAGE-SPECIFIC LOGIC
+
+### 🔵 Screening
+- Inform the candidate their application is under review.
+- Let them know they've entered the screening stage.
+- Tone should be welcoming and encouraging.
+
+### 🟡 Shortlisted
+- Congratulate the candidate on being shortlisted.
+- Express genuine excitement about their profile.
+- Tone should be warm and positive.
+
+### 🟢 Interview
+- Inform the candidate they've been selected for an interview.
+- If date/time/location provided → include clearly.
+- If missing → replace with "we will inform you shortly."
+- Include preparation tips if tone is Friendly or Casual.
+
+### 🟠 Offer
+- Congratulate the candidate warmly on receiving an offer.
+- Keep the tone celebratory but professional.
+- Do not mention specific salary or compensation details.
+
+### 🔴 Rejection
+- Be empathetic, respectful, and kind.
+- Thank the candidate sincerely for their time and effort.
+- Encourage them to apply for future opportunities.
+- Never be blunt or cold. Always soften the message.
+
+---
+
+## RULE 4 — TONE BEHAVIOR
+
+### Professional
+- Formal language, structured sentences.
+- Salutation: "Dear [Name],"
+- Closing: "Best regards,"
+
+### Friendly
+- Warm, conversational, enthusiastic.
+- Salutation: "Hi [Name],"
+- Closing: "Warm regards,"
+
+### Urgent
+- Direct, concise, action-oriented.
+- Salutation: "Dear [Name],"
+- Closing: "Regards,"
+
+### Casual
+- Relaxed and human. Light language.
+- Salutation: "Hey [Name],"
+- Closing: "Cheers,"
+
+---
+
+## STRICT OUTPUT FORMAT
+
+Return ONLY valid JSON in this EXACT format:
 {{
-    "subject": "email subject line here",
-    "body": "complete email body with \\n for line breaks and HR signature at the end"
+    "subject": "specific subject line based on stage and role",
+    "body": "complete email body with proper line breaks"
 }}
 
-Do NOT include any markdown, code blocks, or extra text. ONLY the JSON object.""",
-        "reschedule": f"""Generate a professional interview reschedule email (300-340 words, 3-4 paragraphs, approximately 80-120 words per paragraph).
+Do NOT include markdown, code blocks, or extra text. ONLY the JSON object.
+
+---
+
+Generate the email now."""
+
+    try:
+        response = groq_client.chat.completions.create(
+            model='llama-3.3-70b-versatile',
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        
+        response_text = response.choices[0].message.content.strip()
 
 Candidate Name: {draft_request.candidate_name}
 Job Title: {draft_request.job_title}
