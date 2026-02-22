@@ -1927,46 +1927,6 @@ Generate the email now."""
         )
 
 # Calendar Events Management
-@api_router.post("/calendar/events")
-async def create_calendar_event(event_data: CalendarEventCreate, request: Request):
-                body_match = re.search(r'"body"\s*:\s*"((?:[^"\\]|\\.)*)"', response_text, re.DOTALL)
-                
-                if subject_match and body_match:
-                    subject_raw = subject_match.group(1)
-                    body_raw = body_match.group(1)
-                    
-                    # Unescape the strings properly
-                    email_data = {
-                        "subject": subject_raw.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t'),
-                        "body": body_raw.replace('\\"', '"').replace('\\n', '\n').replace('\\t', '\t')
-                    }
-                else:
-                    # Last resort: try to find any text that looks like email content
-                    logging.error("Could not extract structured data, attempting fallback")
-                    raise HTTPException(status_code=500, detail="Could not parse AI response - invalid format")
-            except HTTPException:
-                raise
-            except Exception as parse_error:
-                logging.error(f"Manual parsing error: {str(parse_error)}")
-                raise HTTPException(status_code=500, detail=f"Failed to parse email content: {str(je)}")
-        
-        return {
-            "subject": email_data.get("subject", ""),
-            "body": email_data.get("body", ""),
-            "email_type": draft_request.email_type
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"Email generation error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate email: {str(e)}")
-
-app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
     allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
